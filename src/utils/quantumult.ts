@@ -1,0 +1,357 @@
+import _ from 'lodash'
+import { logger as defaultLogger } from '@surgio/logger'
+
+import { QUANTUMULT_X_SUPPORTED_VMESS_NETWORK } from '../constant/index.js'
+import {
+  NodeFilterType,
+  NodeTypeEnum,
+  PossibleNodeConfigType,
+  SortedNodeFilterType,
+} from '../types.js'
+import { applyFilter } from '../filters/index.js'
+
+import { getHeader, pickAndFormatStringList } from './portable.js'
+
+import type { Logger } from '@surgio/logger'
+import type { FormatterOptions } from '../runtime/types.js'
+
+/**
+ * @see https://github.com/crossutility/Quantumult-X/blob/master/sample.conf
+ */
+export const getQuantumultXNodes = function (
+  nodeList: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  options: FormatterOptions = {},
+): string {
+  const logger = options.logger ?? defaultLogger
+  const result: ReadonlyArray<string> = applyFilter(nodeList, filter)
+    .map((nodeConfig) => nodeListMapper(nodeConfig, logger))
+    .filter((item): item is [string, string] => item !== undefined)
+    .map((item) => item[1])
+
+  return result.join('\n')
+}
+
+export const getQuantumultXNodeNames = function (
+  nodeList: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  options: FormatterOptions = {},
+): string {
+  const logger = options.logger ?? defaultLogger
+  return applyFilter(nodeList, filter)
+    .map((nodeConfig) => nodeListMapper(nodeConfig, logger))
+    .filter((item): item is [string, string] => item !== undefined)
+    .map((item) => item[0])
+    .join(', ')
+}
+
+function nodeListMapper(
+  nodeConfig: PossibleNodeConfigType,
+  logger: Logger,
+): [string, string] | undefined {
+  switch (nodeConfig.type) {
+    case NodeTypeEnum.Vless:
+    case NodeTypeEnum.Vmess: {
+      if (
+        !QUANTUMULT_X_SUPPORTED_VMESS_NETWORK.includes(
+          nodeConfig.network as any,
+        )
+      ) {
+        logger.warn(
+          `Quantumult X 不支持 ${nodeConfig.network} 的 Vmess 节点，节点 ${nodeConfig.nodeName} 会被省略`,
+        )
+        return void 0
+      }
+
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        // method 为 auto 时 qx 会无法识别
+        nodeConfig.method === 'auto'
+          ? `method=chacha20-poly1305`
+          : `method=${nodeConfig.method}`,
+        `password=${nodeConfig.uuid}`,
+        ...(nodeConfig.udpRelay ? ['udp-relay=true'] : []),
+        ...(nodeConfig.tfo ? ['fast-open=true'] : []),
+        ...(nodeConfig.quantumultXConfig?.vmessAEAD ? ['aead=true'] : []),
+      ]
+
+      switch (nodeConfig.network) {
+        case 'ws':
+          if (
+            (nodeConfig.type === NodeTypeEnum.Vmess && nodeConfig.tls) ||
+            nodeConfig.type === NodeTypeEnum.Vless
+          ) {
+            config.push(`obfs=wss`)
+
+            /* istanbul ignore next -- @preserve */
+            if (nodeConfig.skipCertVerify) {
+              config.push('tls-verification=false')
+            }
+
+            /* istanbul ignore next -- @preserve */
+            if (nodeConfig.tls13) {
+              config.push(`tls13=true`)
+            }
+          } else {
+            config.push(`obfs=ws`)
+          }
+
+          if (nodeConfig.wsOpts) {
+            const obfsHost = getHeader(nodeConfig.wsOpts.headers, 'Host')
+
+            config.push(`obfs-uri=${nodeConfig.wsOpts.path || '/'}`)
+
+            if (obfsHost) {
+              config.push(`obfs-host=${obfsHost}`)
+            }
+          }
+
+          break
+        case 'tcp':
+          if (
+            (nodeConfig.type === NodeTypeEnum.Vmess && nodeConfig.tls) ||
+            nodeConfig.type === NodeTypeEnum.Vless
+          ) {
+            config.push(`obfs=over-tls`)
+
+            if (nodeConfig.skipCertVerify) {
+              config.push('tls-verification=false')
+            } else {
+              config.push('tls-verification=true')
+            }
+
+            /* istanbul ignore next -- @preserve */
+            if (nodeConfig.tls13) {
+              config.push(`tls13=true`)
+            }
+          }
+
+          break
+        case 'http':
+          if (nodeConfig.httpOpts) {
+            const obfsHost = getHeader(nodeConfig.httpOpts.headers, 'Host')
+
+            config.push(
+              'obfs=http',
+              `obfs-uri=${nodeConfig.httpOpts.path || '/'}`,
+            )
+
+            if (obfsHost) {
+              config.push(`obfs-host=${obfsHost}`)
+            }
+          }
+      }
+
+      if (typeof nodeConfig.testUrl === 'string') {
+        config.push(`server_check_url=${nodeConfig['testUrl']}`)
+      }
+
+      config.push(`tag=${nodeConfig.nodeName}`)
+
+      /* istanbul ignore next -- @preserve */
+      if (
+        nodeConfig.wsOpts?.headers &&
+        Object.keys(nodeConfig.wsOpts.headers).length > 1
+      ) {
+        logger.warn(
+          `Quantumult X 不支持自定义额外的 Header 字段，节点 ${nodeConfig.nodeName} 可能不可用`,
+        )
+      }
+
+      return [nodeConfig.nodeName, `${nodeConfig.type}=${config.join(', ')}`]
+    }
+
+    case NodeTypeEnum.Shadowsocks: {
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        ...pickAndFormatStringList(nodeConfig, ['method', 'password']),
+        ...(nodeConfig.obfs && ['http', 'tls'].includes(nodeConfig.obfs)
+          ? [`obfs=${nodeConfig.obfs}`, `obfs-host=${nodeConfig.obfsHost}`]
+          : []),
+        ...(nodeConfig.obfs && ['ws', 'wss'].includes(nodeConfig.obfs)
+          ? [
+              `obfs=${nodeConfig.obfs}`,
+              `obfs-host=${nodeConfig.obfsHost || nodeConfig.hostname}`,
+              `obfs-uri=${nodeConfig.obfsUri || '/'}`,
+            ]
+          : []),
+        ...(nodeConfig.udpRelay ? [`udp-relay=true`] : []),
+        ...(nodeConfig.tfo ? [`fast-open=${nodeConfig.tfo}`] : []),
+      ]
+
+      if (nodeConfig.obfs === 'wss') {
+        if (nodeConfig.skipCertVerify) {
+          config.push('tls-verification=false')
+        } else {
+          config.push('tls-verification=true')
+        }
+
+        if (nodeConfig.tls13) {
+          config.push('tls13=true')
+        }
+      }
+
+      /* istanbul ignore next -- @preserve */
+      if (
+        nodeConfig.wsHeaders &&
+        Object.keys(_.omit(nodeConfig.wsHeaders, ['host'])).length > 0
+      ) {
+        logger.warn(
+          `Quantumult X 不支持自定义额外的 Header 字段，节点 ${nodeConfig.nodeName} 可能不可用`,
+        )
+      }
+
+      if (typeof nodeConfig.testUrl === 'string') {
+        config.push(`server_check_url=${nodeConfig['testUrl']}`)
+      }
+
+      config.push(`tag=${nodeConfig.nodeName}`)
+
+      return [nodeConfig.nodeName, `shadowsocks=${config.join(', ')}`]
+    }
+
+    case NodeTypeEnum.Shadowsocksr: {
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        ...pickAndFormatStringList(nodeConfig, ['method', 'password']),
+        `ssr-protocol=${nodeConfig.protocol}`,
+        `ssr-protocol-param=${nodeConfig.protoparam}`,
+        `obfs=${nodeConfig.obfs}`,
+        `obfs-host=${nodeConfig.obfsparam}`,
+        ...(nodeConfig.udpRelay ? [`udp-relay=true`] : []),
+        ...(nodeConfig.tfo ? [`fast-open=${nodeConfig.tfo}`] : []),
+        ...(typeof nodeConfig.testUrl === 'string'
+          ? [`server_check_url=${nodeConfig.testUrl}`]
+          : []),
+        `tag=${nodeConfig.nodeName}`,
+      ].join(', ')
+
+      return [nodeConfig.nodeName, `shadowsocks=${config}`]
+    }
+
+    case NodeTypeEnum.HTTP:
+    case NodeTypeEnum.HTTPS: {
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        ...pickAndFormatStringList(nodeConfig, ['username', 'password']),
+        ...(nodeConfig.tfo ? [`fast-open=${nodeConfig.tfo}`] : []),
+      ]
+
+      if (nodeConfig.type === NodeTypeEnum.HTTPS) {
+        config.push(
+          'over-tls=true',
+          `tls-verification=${nodeConfig.skipCertVerify !== true}`,
+          ...(nodeConfig.tls13 ? [`tls13=${nodeConfig.tls13}`] : []),
+        )
+      }
+
+      if (typeof nodeConfig.testUrl === 'string') {
+        config.push(`server_check_url=${nodeConfig['testUrl']}`)
+      }
+
+      config.push(`tag=${nodeConfig.nodeName}`)
+
+      return [nodeConfig.nodeName, `http=${config.join(', ')}`]
+    }
+
+    case NodeTypeEnum.Trojan: {
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        ...pickAndFormatStringList(nodeConfig, ['password']),
+        `tls-verification=${nodeConfig.skipCertVerify !== true}`,
+        ...(nodeConfig.tfo ? [`fast-open=${nodeConfig.tfo}`] : []),
+        ...(nodeConfig.udpRelay ? [`udp-relay=true`] : []),
+        ...(nodeConfig.tls13 ? [`tls13=${nodeConfig.tls13}`] : []),
+      ]
+
+      if (nodeConfig.network === 'ws') {
+        /**
+         * The obfs field is only supported with websocket over tls for trojan. When using websocket over
+         * tls you should not set over-tls and tls-host options anymore, instead set obfs=wss and
+         * obfs-host options.
+         */
+        config.push('obfs=wss')
+
+        if (nodeConfig.wsPath) {
+          config.push(`obfs-uri=${nodeConfig.wsPath}`)
+        }
+
+        const hostHeader = nodeConfig?.wsHeaders?.host
+        const sni = nodeConfig.sni
+
+        if (sni) {
+          config.push(`obfs-host=${sni}`)
+        } else if (hostHeader) {
+          config.push(`obfs-host=${hostHeader}`)
+        }
+
+        if (sni && hostHeader) {
+          logger.warn(
+            `Quantumult X 不支持同时定义 sni 和 wsHeaders.host，配置以 sni 为准，节点 ${nodeConfig.nodeName} 可能不可用`,
+          )
+        }
+
+        if (nodeConfig?.wsHeaders) {
+          /* istanbul ignore next -- @preserve */
+          if (Object.keys(_.omit(nodeConfig.wsHeaders, ['host'])).length > 0) {
+            logger.warn(
+              `Quantumult X 不支持自定义额外的 Header 字段，节点 ${nodeConfig.nodeName} 可能不可用`,
+            )
+          }
+        }
+      } else {
+        config.push('over-tls=true')
+
+        if (nodeConfig.sni) {
+          config.push(`tls-host=${nodeConfig.sni}`)
+        }
+      }
+
+      if (typeof nodeConfig.testUrl === 'string') {
+        config.push(`server_check_url=${nodeConfig['testUrl']}`)
+      }
+
+      config.push(`tag=${nodeConfig.nodeName}`)
+
+      return [nodeConfig.nodeName, `trojan=${config.join(', ')}`]
+    }
+
+    case NodeTypeEnum.AnyTLS: {
+      const config = [
+        `${nodeConfig.hostname}:${nodeConfig.port}`,
+        ...pickAndFormatStringList(nodeConfig, ['password']),
+        'over-tls=true',
+        ...(nodeConfig.sni ? [`tls-host=${nodeConfig.sni}`] : []),
+        ...(nodeConfig.realityOpts?.publicKey
+          ? [`reality-base64-pubkey=${nodeConfig.realityOpts.publicKey}`]
+          : []),
+        ...(nodeConfig.realityOpts?.shortId
+          ? [`reality-hex-shortid=${nodeConfig.realityOpts.shortId}`]
+          : []),
+        `tls-verification=${
+          nodeConfig.realityOpts ? true : nodeConfig.skipCertVerify !== true
+        }`,
+        ...(nodeConfig.udpRelay ? [`udp-relay=true`] : []),
+        ...(nodeConfig.tfo ? [`fast-open=true`] : []),
+        ...(nodeConfig.tls13 ? [`tls13=true`] : []),
+      ]
+
+      if (typeof nodeConfig.testUrl === 'string') {
+        config.push(`server_check_url=${nodeConfig['testUrl']}`)
+      }
+
+      config.push(`tag=${nodeConfig.nodeName}`)
+
+      return [nodeConfig.nodeName, `anytls=${config.join(', ')}`]
+    }
+
+    /* istanbul ignore next -- @preserve */
+    default:
+      logger.warn(
+        `不支持为 QuantumultX 生成 ${(nodeConfig as any).type} 的节点，节点 ${
+          (nodeConfig as any).nodeName
+        } 会被省略`,
+      )
+      return void 0
+  }
+}

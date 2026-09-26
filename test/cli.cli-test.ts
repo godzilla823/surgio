@@ -1,0 +1,380 @@
+import { join } from 'path'
+import { execa } from 'execa'
+import fs from 'fs-extra'
+import ini from 'ini'
+import { runCommand } from '@oclif/test'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const fixture = join(process.cwd(), './test/fixture')
+const resolve = (p: string) => join(fixture, p)
+const binPath = join(process.cwd(), 'bin/run')
+
+const runCommandWithEnv = async (
+  args: string[],
+  env: Record<string, string>,
+) => {
+  for (const [key, value] of Object.entries(env)) {
+    vi.stubEnv(key, value)
+  }
+
+  try {
+    return await runCommand(args)
+  } finally {
+    vi.unstubAllEnvs()
+  }
+}
+
+afterEach(async () => {
+  delete process.env.ENV_SURGIO_PROJECT_DIR
+  await fs.remove(resolve('plain/dist'))
+  await fs.remove(resolve('template-error/dist'))
+  await fs.remove(resolve('template-variables-functions/dist'))
+  await fs.remove(resolve('custom-filter/dist'))
+  await fs.remove(resolve('singbox-rules/dist'))
+})
+
+describe('new command', () => {
+  it('rejects legacy projects with a migration message', async () => {
+    const { error, stderr } = await runCommand([
+      'new',
+      'template',
+      `--project=${resolve('plain')}`,
+    ])
+
+    expect(error?.oclif?.exit).toBe(1)
+    expect(stderr).toContain('仅支持 v4 surgio.project.*')
+    expect(stderr).toContain('迁移为 Surgio Project')
+  })
+})
+
+describe('doctor command', () => {
+  it('runs doctor cmd', async () => {
+    const { error, stdout } = await runCommand([
+      'doctor',
+      `--project=${resolve('plain')}`,
+    ])
+
+    expect(error).toBeUndefined()
+    expect(stdout).toContain('surgio')
+    expect(stdout).toContain('node')
+  })
+})
+
+describe('check command', () => {
+  it('loads a CommonJS provider', async () => {
+    const { error, stdout } = await runCommand([
+      'check',
+      'ss',
+      `--project=${resolve('plain')}`,
+    ])
+
+    expect(error).toBeUndefined()
+    expect(stdout).toContain('nodeName')
+  })
+})
+
+describe('subscriptions command', () => {
+  it('enumerates CommonJS providers', async () => {
+    const { error, stdout } = await runCommand([
+      'subscriptions',
+      `--project=${resolve('subscriptions')}`,
+    ])
+
+    expect(error).toBeUndefined()
+    expect(stdout).toContain('custom')
+  })
+})
+
+describe('generate command', () => {
+  describe('default', () => {
+    it('runs generate cmd', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('plain')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const confString1 = fs.readFileSync(resolve('plain/dist/ss.conf'), {
+        encoding: 'utf8',
+      })
+      const confString2 = fs.readFileSync(resolve('plain/dist/custom.conf'), {
+        encoding: 'utf8',
+      })
+      const confString3 = fs.readFileSync(
+        resolve('plain/dist/template-functions.conf'),
+        {
+          encoding: 'utf8',
+        },
+      )
+      const confString5 = fs.readFileSync(resolve('plain/dist/v2rayn.conf'), {
+        encoding: 'utf8',
+      })
+      const singboxConfString = fs.readFileSync(
+        resolve('plain/dist/singbox.json'),
+        {
+          encoding: 'utf8',
+        },
+      )
+      const conf = ini.decode(confString1)
+
+      expect(fs.existsSync(resolve('plain/dist/new_path.conf'))).toBe(true)
+      expect(fs.existsSync(resolve('plain/dist/ss.conf'))).toBe(true)
+      expect(fs.existsSync(resolve('plain/dist/ssr.conf'))).toBe(false)
+      expect(fs.existsSync(resolve('plain/dist/v2rayn.conf'))).toBe(true)
+      expect(fs.existsSync(resolve('plain/dist/custom.conf'))).toBe(true)
+      expect(fs.existsSync(resolve('plain/dist/singbox.json'))).toBe(true)
+      expect(confString1.split('\n')[0]).toBe(
+        '#!MANAGED-CONFIG https://example.com/ss.conf?access_token=abcd interval=43200 strict=false',
+      )
+      expect(confString2.includes('select, 🇺🇸 US')).toBe(true)
+      expect(Object.keys(conf.Proxy).length).toBe(2)
+      expect(confString3).toMatchSnapshot()
+      expect(confString5).toMatchSnapshot()
+      expect(singboxConfString).toMatchSnapshot()
+    })
+  })
+
+  describe('with --skip-fail', () => {
+    it('runs generate cmd', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('plain')}`,
+        '--skip-fail',
+      ])
+
+      expect(error).toBeUndefined()
+      expect(fs.existsSync(resolve('plain/dist/new_path.conf'))).toBe(true)
+    })
+  })
+
+  describe('with template error', () => {
+    it('fails to run generate cmd', async () => {
+      const { error, stderr } = await runCommand([
+        'generate',
+        `--project=${resolve('template-error')}`,
+      ])
+
+      expect(error?.oclif?.exit).toBe(1)
+      expect(stderr).toContain('expected comma after expression')
+    })
+  })
+
+  describe('template variables and functions', () => {
+    it('runs generate cmd', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('template-variables-functions')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const confString = fs.readFileSync(
+        resolve('template-variables-functions/dist/ss.conf'),
+        {
+          encoding: 'utf8',
+        },
+      )
+      const result =
+        '# Netflix\n' +
+        'USER-AGENT,Argo*,Proxy\n' +
+        'DOMAIN-SUFFIX,fast.com,Proxy\n' +
+        'DOMAIN-SUFFIX,netflix.com,Proxy\n' +
+        'DOMAIN-SUFFIX,netflix.net,Proxy\n' +
+        'DOMAIN-SUFFIX,nflxext.com,Proxy\n' +
+        'DOMAIN-SUFFIX,nflximg.com,Proxy\n' +
+        'DOMAIN-SUFFIX,nflximg.net,Proxy\n' +
+        'DOMAIN-SUFFIX,nflxso.net,Proxy\n' +
+        'DOMAIN-SUFFIX,nflxvideo.net,Proxy\n' +
+        'http://example.com/ss.conf\n'
+
+      expect(confString).toBe(result)
+    })
+  })
+
+  describe('sing-box rules', () => {
+    const readJson = (file: string) =>
+      fs.readJsonSync(resolve(`singbox-rules/dist/${file}`))
+
+    it('converts Surge rules into sing-box route rules', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('singbox-rules')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const config = readJson('singbox.json')
+
+      expect(config.outbounds.map((item: any) => item.tag)).toEqual([
+        'direct',
+        'block',
+        'proxy',
+        'US',
+        'HK',
+      ])
+      expect(config.route.final).toBe('proxy')
+      expect(config.route.rule_set.map((item: any) => item.tag)).toEqual([
+        'geoip-cn',
+        'netflix',
+      ])
+      expect(config.route.rule_set[1].url).toBe(
+        'http://example.com/ruleset/netflix.json',
+      )
+      expect(config.route.rules[0]).toEqual({
+        ip_is_private: true,
+        outbound: 'direct',
+      })
+      expect(config.route.rules[1]).toEqual({
+        rule_set: ['netflix'],
+        outbound: 'proxy',
+      })
+      expect(config.route.rules[2].outbound).toBe('proxy')
+      expect(config.route.rules[2].ip_cidr).toContain('91.108.56.0/22')
+      expect(config.route.rules.at(-1)).toEqual({
+        domain_suffix: ['ads.example.com'],
+        action: 'reject',
+      })
+      expect(JSON.stringify(config)).not.toContain('USER-AGENT')
+      expect(config).toMatchSnapshot()
+    })
+
+    it('generates a headless rule-set file', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('singbox-rules')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const ruleSet = readJson('ruleset/netflix.json')
+
+      expect(ruleSet.version).toBe(3)
+      expect(ruleSet.rules).toHaveLength(1)
+      expect(ruleSet.rules[0].domain_suffix).toContain('netflix.com')
+      expect(ruleSet.rules[0]).not.toHaveProperty('outbound')
+    })
+
+    it('renders the singbox template filter inside a .tpl file', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('singbox-rules')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const config = readJson('singbox-filter.json')
+
+      expect(config.route.rules).toHaveLength(3)
+      expect(config.route.rules[0].outbound).toBe('proxy')
+      expect(config.route.rules[1]).toEqual({
+        domain_suffix: ['cn'],
+        domain_keyword: ['baidu'],
+        ip_cidr: ['192.168.0.0/16'],
+        outbound: 'direct',
+      })
+      expect(config.route.rules[2]).toEqual({
+        rule_set: ['geoip-cn'],
+        outbound: 'direct',
+      })
+    })
+  })
+
+  describe('custom filter', () => {
+    it('runs generate cmd', async () => {
+      const { error } = await runCommand([
+        'generate',
+        `--project=${resolve('custom-filter')}`,
+      ])
+
+      expect(error).toBeUndefined()
+      const confString1 = fs.readFileSync(
+        resolve('custom-filter/dist/ss.conf'),
+        {
+          encoding: 'utf8',
+        },
+      )
+      const confString2 = fs.readFileSync(
+        resolve('custom-filter/dist/test_sorted_filter.conf'),
+        {
+          encoding: 'utf8',
+        },
+      )
+
+      expect(confString1).toMatchSnapshot()
+      expect(confString2).toMatchSnapshot()
+    })
+  })
+
+  describe('v2ray tls options', () => {
+    it('runs generate cmd', async () => {
+      const { error } = await runCommandWithEnv(
+        ['generate', `--project=${resolve('plain')}`],
+        {
+          TEST_TLS13_ENABLE: 'true',
+          TEST_SKIP_CERT_VERIFY_ENABLE: 'true',
+        },
+      )
+
+      expect(error).toBeUndefined()
+      const confString1 = fs.readFileSync(resolve('plain/dist/v2rayn.conf'), {
+        encoding: 'utf8',
+      })
+      const confString2 = fs.readFileSync(
+        resolve('plain/dist/clash_mod.conf'),
+        {
+          encoding: 'utf8',
+        },
+      )
+
+      expect(confString1).toMatchSnapshot()
+      expect(confString2).toMatchSnapshot()
+    })
+  })
+})
+
+describe('oclif integration', () => {
+  it('lists business commands and help without plugin management', async () => {
+    const { error, stdout } = await runCommand(['--help'])
+
+    expect(error).toBeUndefined()
+    expect(stdout).toContain('generate')
+    expect(stdout).toContain('help')
+    expect(stdout).not.toMatch(/^\s+plugins(?:\s|$)/m)
+  })
+
+  it('shows generate command help', async () => {
+    const { error, stdout } = await runCommand(['help', 'generate'])
+
+    expect(error).toBeUndefined()
+    expect(stdout).toContain('生成规则')
+    expect(stdout).toContain('--project=<value>')
+    expect(stdout).toContain('--verbose')
+    expect(stdout).toContain('--skip-lint')
+  })
+
+  it('rejects the removed plugins command', async () => {
+    const { error } = await runCommand(['plugins'])
+
+    expect(error?.oclif?.exit).toBe(2)
+    expect(error?.message).toBe('command plugins not found')
+  })
+
+  it('runs the production entrypoint without leaking error stacks', async () => {
+    const configHome = resolve('cli-config')
+    const env = { ...process.env, XDG_CONFIG_HOME: configHome }
+    const success = await execa(
+      process.execPath,
+      [binPath, 'doctor', `--project=${resolve('plain')}`],
+      { env, reject: false },
+    )
+    const failure = await execa(process.execPath, [binPath, 'plugins'], {
+      env,
+      reject: false,
+    })
+
+    expect(success.exitCode).toBe(0)
+    expect(success.stdout).toContain('surgio')
+    expect(failure.exitCode).toBe(2)
+    expect(failure.stderr).toContain('command plugins not found')
+    expect(failure.stderr).not.toContain('ExitError')
+    expect(failure.stderr).not.toContain('node_modules/@oclif/core')
+
+    await fs.remove(configHome)
+  })
+})

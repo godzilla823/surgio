@@ -1,182 +1,266 @@
 {
   "name": "surgio",
-  "version": "2.10.3",
-  "main": "build/index.js",
-  "typings": "build/index.d.ts",
+  "description": "Generating rules for Surge, Clash, Quantumult like a PRO",
+  "version": "4.0.0-beta.6",
+  "type": "module",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "module-sync": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./internal": {
+      "types": "./build/internal.d.ts",
+      "module-sync": "./build/internal.js",
+      "default": "./build/internal.js"
+    },
+    "./generator": {
+      "types": "./build/generator/index.d.ts",
+      "module-sync": "./build/generator/index.js",
+      "default": "./build/generator/index.js"
+    },
+    "./provider": {
+      "types": "./build/provider/index.d.ts",
+      "module-sync": "./build/provider/index.js",
+      "default": "./build/provider/index.js"
+    },
+    "./constant": {
+      "types": "./build/constant/index.d.ts",
+      "module-sync": "./build/constant/index.js",
+      "default": "./build/constant/index.js"
+    },
+    "./utils": {
+      "types": "./build/utils/index.d.ts",
+      "module-sync": "./build/utils/index.js",
+      "default": "./build/utils/index.js"
+    },
+    "./config": {
+      "types": "./build/config.d.ts",
+      "module-sync": "./build/config.js",
+      "default": "./build/config.js"
+    },
+    "./project": {
+      "types": "./build/project/index.d.ts",
+      "module-sync": "./build/project/index.js",
+      "default": "./build/project/index.js"
+    },
+    "./runtime": {
+      "types": "./build/runtime/index.d.ts",
+      "default": "./build/runtime/index.js"
+    },
+    "./runtime/node": {
+      "types": "./build/runtime/node.d.ts",
+      "module-sync": "./build/runtime/node.js",
+      "default": "./build/runtime/node.js"
+    },
+    "./cache": {
+      "types": "./build/cache/index.d.ts",
+      "module-sync": "./build/cache/index.js",
+      "default": "./build/cache/index.js"
+    },
+    "./cache/core": {
+      "types": "./build/cache/core.d.ts",
+      "default": "./build/cache/core.js"
+    },
+    "./cache/cloudflare": {
+      "types": "./build/cache/cloudflare.d.ts",
+      "default": "./build/cache/cloudflare.js"
+    },
+    "./cache/filesystem": {
+      "types": "./build/cache/filesystem.d.ts",
+      "default": "./build/cache/filesystem.js"
+    },
+    "./cache/upstash": {
+      "types": "./build/cache/upstash.d.ts",
+      "default": "./build/cache/upstash.js"
+    },
+    "./cache/redis": {
+      "types": "./build/cache/redis.d.ts",
+      "default": "./build/cache/redis.js"
+    },
+    "./worker": {
+      "types": "./build/worker/index.d.ts",
+      "default": "./build/worker/index.js"
+    },
+    "./worker/config": {
+      "types": "./build/worker/config.d.ts",
+      "default": "./build/worker/config.js"
+    },
+    "./worker/build": {
+      "types": "./build/worker/build.d.ts",
+      "default": "./build/worker/build.js"
+    },
+    "./index": "./build/index.js",
+    "./index.js": "./build/index.js",
+    "./internal.js": "./build/internal.js",
+    "./generator.js": "./build/generator/index.js",
+    "./provider.js": "./build/provider/index.js",
+    "./constant.js": "./build/constant/index.js",
+    "./utils.js": "./build/utils/index.js",
+    "./config.js": "./build/config.js",
+    "./cache.js": "./build/cache/index.js",
+    "./build/*.js": "./build/*.js",
+    "./build/*": "./build/*.js",
+    "./package.json": "./package.json"
+  },
   "bin": {
-    "surgio": "bin/surgio.js"
+    "surgio": "bin/run"
   },
   "repository": "https://github.com/geekdada/surgio",
-  "author": "Yihang Li <me@royli.dev>",
+  "author": "Roy Li <me@royli.dev>",
   "license": "MIT",
   "files": [
     "bin",
-    "build",
-    "hygen-template"
+    "build"
   ],
   "bugs": {
     "url": "https://github.com/geekdada/surgio/issues"
   },
-  "homepage": "https://surgio.royli.dev",
-  "devDependencies": {
-    "@commitlint/cli": "^11.0.0",
-    "@commitlint/config-angular": "^11.0.0",
-    "@istanbuljs/nyc-config-typescript": "^1.0.1",
-    "@types/bluebird": "^3.5.30",
-    "@types/bytes": "^3.1.0",
-    "@types/debug": "^4.1.5",
-    "@types/eslint": "^7.2.0",
-    "@types/fs-extra": "^9.0.13",
-    "@types/hapi__joi": "^17.1.3",
-    "@types/inquirer": "^7.3.0",
-    "@types/listr": "^0.14.2",
-    "@types/lodash": "^4.14.174",
-    "@types/lru-cache": "^5.1.0",
-    "@types/node": "^12",
-    "@types/nunjucks": "^3.2.0",
-    "@types/urlsafe-base64": "^1.0.28",
-    "@types/yaml": "^1.9.7",
-    "@typescript-eslint/eslint-plugin": "^4.31.2",
-    "@typescript-eslint/parser": "^4.31.2",
-    "@vuepress/plugin-docsearch": "^2.0.0-beta.26",
-    "@vuepress/plugin-google-analytics": "^2.0.0-beta.26",
-    "@vuepress/plugin-register-components": "^2.0.0-beta.26",
-    "@vuepress/theme-default": "^2.0.0-beta.26",
-    "@vuepress/utils": "^2.0.0-beta.25",
-    "ava": "^3.14.0",
-    "benchmark": "^2.1.4",
-    "codecov": "^3.7.1",
-    "coffee": "^5.3.0",
-    "conventional-changelog-cli": "^2.0.31",
-    "esbuild": "^0.13.9",
-    "esbuild-register": "^3.0.0",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-prettier": "^4.0.0",
-    "husky": "^4.3.0",
-    "ini": "^1.3.5",
-    "jsdom": "^16.2.2",
-    "lint-staged": "^10.3.0",
-    "nock": "^13.0.0-beta.3",
-    "np": "^6.3.1",
-    "npm-debug-log-cleaner": "^1.0.3",
-    "npm-run-all": "^4.1.5",
-    "nyc": "^15.0.1",
-    "pkg": "^4.4.8",
-    "prettier": "^2.4.1",
-    "sinon": "^9.0.2",
-    "sitemap": "^3.0.0",
-    "ts-node": "^9.0.0",
-    "type-fest": "^2.3.4",
-    "typescript": "^4.4.3",
-    "vuepress": "^2.0.0-beta.26"
-  },
+  "homepage": "https://surgio.js.org",
   "scripts": {
-    "dev": "run-s clean && tsc -p tsconfig.json --watch",
-    "test": "run-s test:*",
-    "test:lint": "eslint -c .eslintrc.js --ext .js,.ts .",
-    "test:unit": "run-s build && ava",
-    "coverage": "cross-env TS_NODE_FILES=true nyc ava",
-    "clean": "rimraf build",
-    "build": "run-s clean && tsc -p tsconfig.json",
-    "build:binary": "pkg --target node12-macos,node12-win,node12-linux,node12-alpine --out-path ./binary-build .",
-    "prepublish": "run-s build",
+    "dev": "pnpm run build --watch",
+    "test": "run-s build test:types test:lint test:examples test:unit test:cli",
+    "test:types": "tsc --noEmit && tsc --noEmit -p test/fixture/typescript-consumer/tsconfig.json",
+    "test:lint": "eslint .",
+    "test:examples": "tsc --noEmit -p examples/tsconfig.json && node ./bin/run lint --project ./examples/clash-remote-snippet && node ./bin/run lint --project ./examples/hooks && node ./bin/run lint --project ./examples/quantumultx",
+    "test:unit": "vitest run",
+    "test:worker": "pnpm run build && pnpm run worker:manifest && pnpm run test:worker:types && vitest run --config test/fixture/worker/vitest.config.ts",
+    "test:worker:types": "tsc --noEmit -p test/fixture/worker/tsconfig.json",
+    "test:cli": "vitest run --config vitest.cli.config.ts",
+    "test:cli:update": "vitest run --config vitest.cli.config.ts --update",
+    "run-example": "node ./scripts/run-example.js",
+    "coverage": "vitest run --coverage",
+    "clean": "pnpm run build --clean",
+    "build": "tsc --build tsconfig.build.json",
+    "worker:manifest": "node -e \"import('./build/worker/build.js').then(({ buildWorkerManifest }) => buildWorkerManifest({ configFile: 'test/fixture/worker/surgio.project.ts', outfile: 'test/fixture/worker/.surgio/worker-manifest.mjs' }))\"",
+    "worker:dry-run": "pnpm run build && pnpm run worker:manifest && node -e \"import('node:fs/promises').then(({ mkdir }) => mkdir('.surgio/dist', { recursive: true }))\" && wrangler deploy --dry-run --config test/fixture/worker/wrangler.jsonc --outfile .surgio/dist/worker.js --metafile .surgio/dist/meta.json",
+    "prepublishOnly": "pnpm run clean && pnpm run build",
     "changelog": "conventional-changelog -p angular -i CHANGELOG.md -s -r 0",
-    "pub": "np",
-    "version": "npm run changelog && git add .",
-    "docs:dev": "vuepress dev docs",
-    "docs:build": "vuepress build docs"
+    "prepare": "husky",
+    "docs:dev": "pnpm --dir website start",
+    "docs:build": "pnpm --dir website build",
+    "docs:typecheck": "pnpm --dir website typecheck",
+    "release": "bumpp && pnpm publish",
+    "release:beta": "bumpp --preid beta --no-push && pnpm publish --tag beta"
+  },
+  "oclif": {
+    "bin": "surgio",
+    "dirname": "surgio",
+    "commands": "./build/commands",
+    "plugins": [
+      "@oclif/plugin-help"
+    ],
+    "hooks": {
+      "init": [
+        "./build/hooks/init"
+      ],
+      "prerun": [],
+      "postrun": []
+    },
+    "topicSeparator": " ",
+    "topics": {}
   },
   "dependencies": {
-    "@hapi/joi": "^17.1.1",
-    "@royli/hygen": "^5.0.4",
-    "@surgio/eslint-config-surgio": "^1.0.3",
-    "@surgio/logger": "^1.1.0",
-    "agentkeepalive": "^4.1.0",
-    "ali-oss": "^6.7.0",
+    "@brillout/import": "^0.2.6",
+    "@keyv/serialize": "^1.1.1",
+    "@oclif/core": "^5.0.0",
+    "@oclif/plugin-help": "^7.0.0",
+    "@surgio/eslint-config-surgio": "3.0.0-beta.0",
+    "@surgio/logger": "2.0.0-beta.0",
+    "@upstash/redis": "^1.38.2",
     "bluebird": "^3.7.2",
-    "bytes": "^3.1.0",
-    "chalk": "^4.0.0",
-    "check-node-version": "^4.0.3",
-    "common-bin": "^2.8.3",
-    "cross-env": "^7.0.2",
-    "date-fns": "^2.16.1",
-    "debug": "^4.1.1",
-    "detect-newline": "^3.1.0",
-    "emoji-regex": "^9.0.0",
-    "env2": "^2.2.2",
-    "eslint": "^7.8.1",
-    "espree": "^7.3.0",
-    "execa": "^4.0.3",
-    "filesize": "^6.1.0",
-    "fs-extra": "^9.0.0",
-    "get-port": "^5.1.0",
-    "global-agent": "^2.1.7",
-    "got": "^11.6.1",
-    "inquirer": "^7.1.0",
-    "listr": "^0.14.3",
-    "lodash": "^4.17.19",
-    "lru-cache": "^6.0.0",
-    "merge-stream": "^2.0.0",
+    "bytes": "^3.1.2",
+    "chalk": "^6.0.0",
+    "change-case": "^5.4.4",
+    "check-node-version": "^4.2.1",
+    "compare-versions": "^6.1.1",
+    "date-fns": "^4.4.0",
+    "dotenv": "^17.4.2",
+    "emoji-regex": "^10.6.0",
+    "eslint": "^10.8.1",
+    "execa": "^10.0.1",
+    "filesize": "^11.0.22",
+    "fs-extra": "^11.4.0",
+    "inquirer": "^14.0.2",
+    "ioredis": "^6.0.0",
+    "is-gzip": "^2.0.0",
+    "ky": "^2.0.2",
+    "lodash": "^4.18.1",
+    "magicast": "^0.5.4",
+    "micromatch": "^4.0.8",
+    "minio": "^8.0.7",
     "ms": "^2.1.3",
     "node-dir": "^0.1.17",
-    "nunjucks": "^3.2.1",
-    "ora": "^5.1.0",
-    "query-string": "^6.12.1",
-    "rimraf": "^3.0.0",
-    "shelljs": "^0.8.3",
-    "source-map-support": "^0.5.19",
-    "update-notifier": "^5.0.0",
-    "urlsafe-base64": "^1.0.0",
-    "winston": "^3.2.1",
-    "yaml": "^1.9.2"
+    "node-gzip": "^1.1.2",
+    "nunjucks": "^3.2.4",
+    "ora": "^9.4.1",
+    "rimraf": "^6.1.3",
+    "source-map-support": "^0.5.21",
+    "type-fest": "^5.8.0",
+    "typescript-eslint": "^8.67.0",
+    "update-notifier": "^7.3.1",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3",
+    "zod-validation-error": "^5.0.0"
   },
-  "ava": {
-    "failFast": false,
-    "timeout": "30s",
-    "extensions": [
-      "ts",
-      "js"
-    ],
-    "files": [
-      "test/**/*.test.ts",
-      "lib/**/*.test.ts"
-    ],
-    "require": [
-      "esbuild-register/register",
-      "./test/stub-axios.js"
-    ]
-  },
-  "nyc": {
-    "extends": "@istanbuljs/nyc-config-typescript",
-    "reporter": [
-      "html",
-      "text-summary",
-      "lcov"
-    ]
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.21.3",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-angular": "^21.2.2",
+    "@eslint/js": "^10.0.1",
+    "@oclif/test": "^5.0.0",
+    "@types/bluebird": "^3.5.42",
+    "@types/bytes": "^3.1.5",
+    "@types/debug": "^4.1.13",
+    "@types/fs-extra": "^11.0.4",
+    "@types/ini": "^4.1.1",
+    "@types/is-gzip": "^2.0.2",
+    "@types/lodash": "^4.17.25",
+    "@types/micromatch": "^4.0.10",
+    "@types/ms": "^2.1.0",
+    "@types/node": "^22.20.1",
+    "@types/node-dir": "^0.0.37",
+    "@types/node-gzip": "^1.1.3",
+    "@types/nunjucks": "^3.2.6",
+    "@types/update-notifier": "^6.0.8",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "@vitest/coverage-istanbul": "^4.1.10",
+    "benchmark": "^2.1.4",
+    "bumpp": "^12.2.1",
+    "conventional-changelog": "^8.1.3",
+    "eslint-config-prettier": "^10.1.5",
+    "eslint-import-resolver-typescript": "^4.4.5",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-prettier": "^5.5.6",
+    "globals": "^17.11.0",
+    "husky": "^9.1.7",
+    "ini": "^7.0.0",
+    "lint-staged": "^17.3.0",
+    "nock": "^14.0.17",
+    "npm-debug-log-cleaner": "^1.0.3",
+    "npm-run-all": "^4.1.5",
+    "prettier": "^3.9.6",
+    "ts-node": "^10.9.2",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.123.0"
   },
   "engines": {
-    "node": ">=12.0.0"
+    "node": ">=22.22.2"
   },
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
   "lint-staged": {
-    "*.js": "eslint",
-    "*.ts": "eslint --ext .ts"
-  },
-  "husky": {
-    "hooks": {
-      "commit-msg": "commitlint -c .commitlintrc.json -E HUSKY_GIT_PARAMS",
-      "pre-commit": "npm-debug-log-cleaner && lint-staged"
-    }
-  },
-  "pkg": {
-    "scripts": "build/**/*.js",
-    "assets": [
-      "hygen-template/**/*"
-    ]
+    "*.{js,jsx,ts,tsx}": "eslint --fix"
   },
   "keywords": [
     "surgio",
     "surge",
     "quantumult",
-    "clash"
+    "clash",
+    "mihomo",
+    "singbox",
+    "shadowrocket"
   ]
 }

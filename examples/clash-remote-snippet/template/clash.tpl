@@ -25,7 +25,7 @@ Proxy Group:
   proxies: {{ getClashNodeNames(nodeList, netflixFilter) | json }}
 - type: select
   name: 📺 Youtube
-  proxies: {{ getClashNodeNames(nodeList, youtubeFilter) | json }}
+  proxies: {{ getClashNodeNames(nodeList) | json }}
 - type: url-test
   name: US
   proxies: {{ getClashNodeNames(nodeList, usFilter) | json }}
@@ -44,9 +44,11 @@ Proxy Group:
   proxies: ['DIRECT', '🍎 Apple']
 
 Rule:
-{{ remoteSnippets.netflix.main('🎬 Netflix') | patchYamlArray }}
-{{ remoteSnippets.youtube.main('📺 Youtube') | patchYamlArray }}
-{{ remoteSnippets.global.main('🚀 Proxy') | patchYamlArray }}
+{% filter clash %}
+{{ remoteSnippets.netflix.main('🎬 Netflix') }}
+{{ remoteSnippets.youtube.main('📺 Youtube') }}
+{{ remoteSnippets.global.main('🚀 Proxy') }}
+{% endfilter %}
 
 # LAN
 - DOMAIN-SUFFIX,local,DIRECT

@@ -1,29 +1,21 @@
-'use strict';
+'use strict'
 
-const path = require('path');
+const path = require('path')
+
+const { extendOutbounds } = require('../../../')
 
 module.exports = {
   artifacts: [
     {
       name: 'new_path.conf',
       template: 'test',
-      provider: 'ss_json',
+      provider: 'ss',
       destDir: path.join(__dirname, './dist'),
-    },
-    {
-      name: 'ss_json.conf',
-      template: 'test',
-      provider: 'ss_json',
     },
     {
       name: 'ss.conf',
       template: 'test',
       provider: 'ss',
-    },
-    {
-      name: 'ssr.conf',
-      template: 'test',
-      provider: 'ssr',
     },
     {
       name: 'v2rayn.conf',
@@ -46,56 +38,48 @@ module.exports = {
       provider: 'clash_mod',
     },
     {
-      name: 'ssd.conf',
-      template: 'test',
-      provider: 'ssd',
-    },
-    {
       name: 'template-functions.conf',
       template: 'template-functions',
       provider: 'ss',
-      combineProviders: [
-        'custom',
-        'ss_json',
-        'v2rayn',
-        'clash',
-        'ssr_with_udp',
-        'ssd',
-      ],
+      combineProviders: ['custom', 'v2rayn', 'clash', 'ssr_with_udp'],
       customParams: {
         globalVariableWillBeRewritten: 'barbar',
         subLevel: {
           anotherVariableWillBeRewritten: 'another-value',
         },
       },
-      proxyGroupModifier() {
-        return [
+    },
+    {
+      name: 'singbox.json',
+      template: 'singbox',
+      templateType: 'json',
+      extendTemplate: extendOutbounds(
+        ({ getSingboxNodes, getSingboxNodeNames, nodeList }) => [
           {
-            name: 'auto all',
-            type: 'url-test',
+            type: 'direct',
+            tag: 'direct',
+            tcp_fast_open: false,
+            tcp_multi_path: true,
           },
           {
-            name: 'select all',
-            type: 'select',
+            type: 'selector',
+            tag: 'proxy',
+            outbounds: ['auto', ...getSingboxNodeNames(nodeList)],
+            interrupt_exist_connections: false,
           },
-        ];
-      },
+          ...getSingboxNodes(nodeList),
+        ],
+      ),
+      provider: 'ss',
     },
   ],
   urlBase: 'https://example.com/',
-  binPath: {
-    shadowsocksr: '/usr/local/bin/ssr-local',
-    v2ray: '/usr/local/bin/v2ray',
-  },
   flags: {
     '🚀': '火箭',
     '🎉': [/foobar/i],
   },
   gateway: {
     accessToken: 'abcd',
-  },
-  surgeConfig: {
-    v2ray: 'native',
   },
   customFilters: {
     globalFilter: (node) => node.nodeName === '测试中文',
@@ -110,4 +94,4 @@ module.exports = {
   },
   proxyTestUrl: 'http://www.google.com/generate_204',
   proxyTestInterval: 2400,
-};
+}

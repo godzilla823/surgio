@@ -1,0 +1,79 @@
+/* istanbul ignore file -- @preserve */
+import path from 'path'
+import { Args, ux } from '@oclif/core'
+import fs from 'fs-extra'
+import inquirer from 'inquirer'
+
+import BaseCommand from '../base-command.js'
+import { getConfig } from '../config.js'
+import { getProvider } from '../provider/index.js'
+import { loadModuleSync } from '../utils/module-loader.js'
+
+class CheckCommand extends BaseCommand<typeof CheckCommand> {
+  static description = '查询 Provider'
+
+  static args = {
+    provider: Args.string({
+      description: '发起检查的 Provider',
+      required: true,
+    }),
+  }
+
+  public async run(): Promise<void> {
+    const nodeList = await this.getNodeList(this.args.provider)
+
+    if (!process.stdin.isTTY) {
+      console.log(JSON.stringify(nodeList, null, 2))
+      return
+    }
+
+    const answers = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'node',
+        message: '请选择节点',
+        choices: nodeList.map((node) => {
+          const name =
+            'hostname' in node && 'port' in node
+              ? `${node.nodeName} - ${node.hostname}:${node.port}`
+              : node.nodeName
+
+          return {
+            name,
+            value: node,
+          }
+        }),
+      },
+    ])
+
+    console.log(JSON.stringify(answers.node, null, 2))
+
+    await this.cleanup()
+  }
+
+  private async getNodeList(providerName: string) {
+    ux.action.start('正在获取 Provider 信息')
+
+    const config = getConfig()
+    const definition = this.surgioProject.providers?.[providerName]
+    const filePath = path.resolve(config.providerDir, `./${providerName}.js`)
+    const file: any | Error = definition
+      ? definition
+      : fs.existsSync(filePath)
+        ? loadModuleSync(filePath)
+        : new Error('找不到该 Provider')
+
+    if (file instanceof Error) {
+      throw file
+    }
+
+    const provider = await getProvider(providerName, file)
+    const { nodeList } = await provider.getNodeListV2()
+
+    ux.action.stop()
+
+    return nodeList
+  }
+}
+
+export default CheckCommand

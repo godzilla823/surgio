@@ -1,0 +1,449 @@
+import { isIPv4 } from 'net'
+import { logger as defaultLogger } from '@surgio/logger'
+
+import {
+  NodeFilterType,
+  NodeTypeEnum,
+  PossibleNodeConfigType,
+  SortedNodeFilterType,
+} from '../types.js'
+import {
+  ERR_INVALID_FILTER,
+  LOON_SUPPORTED_VMESS_NETWORK,
+} from '../constant/index.js'
+import { applyFilter } from '../filters/index.js'
+
+import { getHeader } from './portable.js'
+
+import type { FormatterOptions } from '../runtime/types.js'
+
+const isLoonNodeSupported = (node: PossibleNodeConfigType): boolean => {
+  switch (node.type) {
+    case NodeTypeEnum.Shadowsocks:
+      return !node.obfs || ['http', 'tls'].includes(node.obfs)
+    case NodeTypeEnum.Vmess:
+    case NodeTypeEnum.Vless:
+      return (LOON_SUPPORTED_VMESS_NETWORK as readonly string[]).includes(
+        node.network,
+      )
+    case NodeTypeEnum.HTTP:
+    case NodeTypeEnum.HTTPS:
+    case NodeTypeEnum.Shadowsocksr:
+    case NodeTypeEnum.Trojan:
+    case NodeTypeEnum.Wireguard:
+    case NodeTypeEnum.AnyTLS:
+    case NodeTypeEnum.Hysteria2:
+      return true
+    default:
+      return false
+  }
+}
+
+const formatUsername = (username = ''): string =>
+  /[,"\\\s]/.test(username) ? JSON.stringify(username) : username
+
+// https://nsloon.app/docs/Node/#%E8%8A%82%E7%82%B9%E6%A0%BC%E5%BC%8F
+export const getLoonNodes = function (
+  list: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  options: FormatterOptions = {},
+): string {
+  if (arguments.length === 2 && typeof filter === 'undefined') {
+    throw new Error(ERR_INVALID_FILTER)
+  }
+
+  const logger = options.logger ?? defaultLogger
+  const result: ReadonlyArray<string> = applyFilter(list, filter)
+    .map((nodeConfig): string | undefined => {
+      switch (nodeConfig.type) {
+        case NodeTypeEnum.Shadowsocks: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = Shadowsocks`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            nodeConfig.method,
+            JSON.stringify(nodeConfig.password),
+          ]
+
+          if (nodeConfig.obfs) {
+            if (isLoonNodeSupported(nodeConfig)) {
+              config.push(
+                nodeConfig.obfs,
+                nodeConfig.obfsHost || nodeConfig.hostname,
+              )
+            } else {
+              logger.warn(
+                `不支持为 Loon 生成混淆为 ${nodeConfig.obfs} 的节点，节点 ${nodeConfig.nodeName} 会被省略`,
+              )
+              return void 0
+            }
+          }
+
+          if (nodeConfig.tfo) {
+            config.push('fast-open=true')
+          }
+
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+
+          if (nodeConfig.shadowTls) {
+            config.push(
+              `shadow-tls-password=${JSON.stringify(nodeConfig.shadowTls.password)}`,
+              `shadow-tls-sni=${nodeConfig.shadowTls.sni}`,
+            )
+
+            if (nodeConfig.shadowTls.version !== undefined) {
+              config.push(`shadow-tls-version=${nodeConfig.shadowTls.version}`)
+            }
+          }
+
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.Shadowsocksr: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = ShadowsocksR`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            nodeConfig.method,
+            JSON.stringify(nodeConfig.password),
+            `protocol=${nodeConfig.protocol}`,
+            `protocol-param=${nodeConfig.protoparam}`,
+            `obfs=${nodeConfig.obfs}`,
+            `obfs-param=${nodeConfig.obfsparam}`,
+          ]
+
+          if (nodeConfig.tfo) {
+            config.push('fast-open=true')
+          }
+
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.Hysteria2: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = Hysteria2`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            JSON.stringify(nodeConfig.password),
+          ]
+
+          if (nodeConfig.sni) {
+            config.push(`sni=${nodeConfig.sni}`)
+          }
+
+          if (nodeConfig.skipCertVerify) {
+            config.push('skip-cert-verify=true')
+          }
+
+          if (nodeConfig.tfo) {
+            config.push('fast-open=true')
+          }
+
+          if (nodeConfig.obfsPassword) {
+            config.push(
+              `salamander-password=${JSON.stringify(nodeConfig.obfsPassword)}`,
+            )
+          }
+
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.AnyTLS: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = AnyTLS`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            JSON.stringify(nodeConfig.password),
+          ]
+
+          if (nodeConfig.sni) {
+            config.push(`sni=${nodeConfig.sni}`)
+          }
+
+          if (nodeConfig.skipCertVerify) {
+            config.push('skip-cert-verify=true')
+          }
+
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+
+          if (nodeConfig.blockQuic === 'auto') {
+            logger.warn(
+              `Loon 不支持 AnyTLS 节点 ${nodeConfig.nodeName} 的 blockQuic=auto，将省略 block-quic 参数`,
+            )
+          } else if (nodeConfig.blockQuic !== undefined) {
+            config.push(`block-quic=${nodeConfig.blockQuic === 'on'}`)
+          }
+
+          if (nodeConfig.tfo) {
+            config.push('fast-open=true')
+          }
+
+          return config.join(',')
+        }
+        case NodeTypeEnum.Vless:
+        case NodeTypeEnum.Vmess: {
+          if (!isLoonNodeSupported(nodeConfig)) {
+            logger.warn(
+              `Loon 不支持 ${
+                nodeConfig.network
+              } 的 ${nodeConfig.type.toUpperCase()} 节点，节点 ${
+                nodeConfig.nodeName
+              } 会被省略`,
+            )
+            return void 0
+          }
+
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = ${
+              nodeConfig.type === NodeTypeEnum.Vmess ? 'vmess' : 'VLESS'
+            }`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+          ]
+
+          if (nodeConfig.type === NodeTypeEnum.Vmess) {
+            config.push(
+              nodeConfig.method === 'auto'
+                ? `chacha20-poly1305`
+                : nodeConfig.method,
+            )
+          }
+
+          config.push(
+            JSON.stringify(nodeConfig.uuid),
+            `transport=${nodeConfig.network}`,
+          )
+
+          if (
+            nodeConfig.type === NodeTypeEnum.Vmess &&
+            nodeConfig.alterId !== undefined
+          ) {
+            config.push(`alterId=${nodeConfig.alterId}`)
+          }
+
+          // VLESS Reality 支持
+          if (nodeConfig.type === NodeTypeEnum.Vless) {
+            if (nodeConfig.flow) {
+              config.push(`flow=${nodeConfig.flow}`)
+            }
+
+            if (nodeConfig.realityOpts) {
+              if (nodeConfig.realityOpts.publicKey) {
+                config.push(`public-key="${nodeConfig.realityOpts.publicKey}"`)
+              }
+
+              if (nodeConfig.realityOpts.shortId) {
+                config.push(`short-id=${nodeConfig.realityOpts.shortId}`)
+              }
+            }
+          }
+
+          if (nodeConfig.network === 'ws' && nodeConfig.wsOpts) {
+            const obfsHost = getHeader(nodeConfig.wsOpts.headers, 'Host')
+
+            config.push(`path=${nodeConfig.wsOpts.path || '/'}`)
+
+            if (obfsHost) {
+              config.push(`host=${obfsHost}`)
+            }
+          }
+
+          if (nodeConfig.network === 'http' && nodeConfig.httpOpts) {
+            const obfsHost = getHeader(nodeConfig.httpOpts.headers, 'Host')
+
+            config.push(`path=${nodeConfig.httpOpts.path || '/'}`)
+
+            if (obfsHost) {
+              config.push(`host=${obfsHost}`)
+            }
+
+            /* istanbul ignore next -- @preserve */
+            if (nodeConfig.httpOpts.method !== 'GET') {
+              logger.warn(
+                `Loon 不支持自定义 VMESS+HTTP 节点的 method 属性，节点 ${nodeConfig.nodeName} 可能不可用`,
+              )
+            }
+          }
+
+          if (
+            (nodeConfig.type === NodeTypeEnum.Vmess && nodeConfig.tls) ||
+            nodeConfig.type === NodeTypeEnum.Vless
+          ) {
+            config.push(`over-tls=true`)
+
+            if (nodeConfig.sni) {
+              config.push(`sni=${nodeConfig.sni}`)
+            }
+
+            if (nodeConfig.skipCertVerify) {
+              config.push(`skip-cert-verify=true`)
+            }
+          }
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.Trojan: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = trojan`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            JSON.stringify(nodeConfig.password),
+            `sni=${nodeConfig.sni || nodeConfig.hostname}`,
+            `skip-cert-verify=${nodeConfig.skipCertVerify === true}`,
+          ]
+
+          if (nodeConfig.network === 'ws') {
+            config.push('transport=ws', `path=${nodeConfig.wsPath || '/'}`)
+
+            if (nodeConfig.wsHeaders) {
+              const host = getHeader(nodeConfig.wsHeaders, 'Host')
+              if (host) {
+                config.push(`host=${host}`)
+              }
+
+              if (
+                Object.keys(nodeConfig.wsHeaders).some(
+                  (key) => key.toLowerCase() !== 'host',
+                )
+              ) {
+                logger.warn(
+                  `Loon 不支持自定义额外的 Header 字段，节点 ${nodeConfig.nodeName} 可能不可用`,
+                )
+              }
+            }
+          }
+
+          if (nodeConfig.tfo) {
+            config.push('fast-open=true')
+          }
+
+          if (nodeConfig.udpRelay) {
+            config.push('udp=true')
+          }
+
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.HTTPS: {
+          const config: Array<string | number> = [
+            `${nodeConfig.nodeName} = https`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            formatUsername(nodeConfig.username),
+            JSON.stringify(
+              nodeConfig.password /* istanbul ignore next -- @preserve */ || '',
+            ),
+            `sni=${nodeConfig.sni || nodeConfig.hostname}`,
+            `skip-cert-verify=${nodeConfig.skipCertVerify === true}`,
+          ]
+
+          return config.join(',')
+        }
+
+        case NodeTypeEnum.HTTP:
+          return [
+            `${nodeConfig.nodeName} = http`,
+            nodeConfig.hostname,
+            nodeConfig.port,
+            formatUsername(nodeConfig.username),
+            JSON.stringify(
+              nodeConfig.password /* istanbul ignore next -- @preserve */ || '',
+            ),
+          ].join(',')
+
+        case NodeTypeEnum.Wireguard: {
+          const config = [
+            `${nodeConfig.nodeName} = wireguard`,
+            `interface-ip=${nodeConfig.selfIp}`,
+            `private-key=${JSON.stringify(nodeConfig.privateKey)}`,
+          ]
+          const peers: Array<string> = []
+
+          if (nodeConfig.selfIpV6) {
+            config.push(`interface-ipV6=${nodeConfig.selfIpV6}`)
+          }
+          if (nodeConfig.mtu) {
+            config.push(`mtu=${nodeConfig.mtu}`)
+          }
+          if (nodeConfig.dnsServers) {
+            for (const dns of nodeConfig.dnsServers) {
+              if (isIPv4(dns)) {
+                config.push(`dns=${dns}`)
+              } else {
+                config.push(`dnsV6=${dns}`)
+              }
+            }
+          }
+
+          if (nodeConfig.peers[0].keepalive) {
+            config.push(`keepalive=${nodeConfig.peers[0].keepalive}`)
+          }
+
+          for (const peer of nodeConfig.peers) {
+            const peerConfig = [
+              `public-key=${JSON.stringify(peer.publicKey)}`,
+              `endpoint=${peer.endpoint}`,
+            ]
+
+            if (peer.allowedIps) {
+              peerConfig.push(`allowed-ips=${JSON.stringify(peer.allowedIps)}`)
+            }
+            if (peer.presharedKey) {
+              peerConfig.push(
+                `preshared-key=${JSON.stringify(peer.presharedKey)}`,
+              )
+            }
+            if (peer.reservedBits) {
+              peerConfig.push(`reserved=${JSON.stringify(peer.reservedBits)}`)
+            }
+
+            peers.push(`{${peerConfig.join(',')}}`)
+          }
+
+          config.push(`peers=[${peers.join(',')}]`)
+
+          return config.join(',')
+        }
+
+        /* istanbul ignore next -- @preserve */
+        default:
+          logger.warn(
+            `不支持为 Loon 生成 ${nodeConfig.type} 的节点，节点 ${nodeConfig.nodeName} 会被省略`,
+          )
+          return void 0
+      }
+    })
+    .filter((item): item is string => item !== undefined)
+
+  return result.join('\n')
+}
+
+export const getLoonNodeNames = function (
+  list: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  separator?: string,
+): string {
+  /* istanbul ignore next -- @preserve */
+  if (arguments.length === 2 && typeof filter === 'undefined') {
+    throw new Error(ERR_INVALID_FILTER)
+  }
+
+  return applyFilter(list.filter(isLoonNodeSupported), filter)
+    .map((item) => item.nodeName)
+    .join(separator || ', ')
+}

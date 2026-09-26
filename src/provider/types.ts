@@ -1,0 +1,42 @@
+import { PossibleNodeConfigType, SubscriptionUserinfo } from '../types.js'
+
+import ClashProvider from './ClashProvider.js'
+import CustomProvider from './CustomProvider.js'
+import ShadowsocksrSubscribeProvider from './ShadowsocksrSubscribeProvider.js'
+import ShadowsocksSubscribeProvider from './ShadowsocksSubscribeProvider.js'
+import TrojanProvider from './TrojanProvider.js'
+import V2rayNSubscribeProvider from './V2rayNSubscribeProvider.js'
+
+import type { RuntimeHeaders } from '../runtime/types.js'
+
+export type PossibleProviderType =
+  | ShadowsocksSubscribeProvider
+  | CustomProvider
+  | V2rayNSubscribeProvider
+  | ShadowsocksrSubscribeProvider
+  | ClashProvider
+  | TrojanProvider
+
+export type DefaultProviderRequestHeaders = RuntimeHeaders
+
+export type GetNodeListParams = Record<string, unknown> & {
+  requestUserAgent?: string
+  requestHeaders?: RuntimeHeaders
+}
+
+export type GetNodeListFunction = (
+  params?: GetNodeListParams,
+) => Promise<ReadonlyArray<PossibleNodeConfigType>>
+
+export type GetSubscriptionUserInfoFunction = (
+  params?: GetNodeListParams,
+) => Promise<SubscriptionUserinfo | undefined>
+
+export type GetNodeListV2Result = {
+  readonly nodeList: ReadonlyArray<PossibleNodeConfigType>
+  readonly subscriptionUserInfo?: SubscriptionUserinfo
+}
+
+export type GetNodeListV2Function = (
+  params?: GetNodeListParams,
+) => Promise<GetNodeListV2Result>

@@ -1,0 +1,15 @@
+packages:
+  - website
+
+autoInstallPeers: false
+
+allowBuilds:
+  '@swc/core': true
+  core-js: false
+  esbuild: true
+  unrs-resolver: true
+  workerd: true
+
+minimumReleaseAgeExclude:
+  - '@surgio/eslint-config-surgio@3.0.0-beta.0'
+  - '@surgio/logger@2.0.0-beta.0'

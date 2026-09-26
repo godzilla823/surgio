@@ -1,0 +1,682 @@
+import { logger as defaultLogger } from '@surgio/logger'
+
+import { ERR_INVALID_FILTER } from '../constant/index.js'
+import {
+  NodeFilterType,
+  NodeTypeEnum,
+  PossibleNodeConfigType,
+  SnellNodeConfig,
+  SortedNodeFilterType,
+} from '../types.js'
+import { applyFilter } from '../filters/index.js'
+import {
+  MultiplexValidator,
+  TlsNodeConfigValidator,
+} from '../validators/index.js'
+
+import { stringifySip003Options } from './ss.js'
+import { checkNotNullish, pickAndFormatKeys } from './portable.js'
+
+import type { Logger } from '@surgio/logger'
+import type { FormatterOptions } from '../runtime/types.js'
+
+export const getSingboxNodes = function (
+  list: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  options: FormatterOptions = {},
+) {
+  const logger = options.logger ?? defaultLogger
+  return applyFilter(list, filter)
+    .flatMap((nodeConfig) => nodeListMapper(nodeConfig, logger))
+    .filter((item): item is Record<string, any> => checkNotNullish(item))
+}
+
+/**
+ * sing-box 将 Tailscale 等节点视为 endpoint 而非 outbound，需要单独放入配置的
+ * `endpoints` 字段中。
+ *
+ * @see https://sing-box.sagernet.org/configuration/endpoint/wireguard
+ * @see https://sing-box.sagernet.org/configuration/endpoint/tailscale
+ */
+export const getSingboxEndpoints = function (
+  list: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+) {
+  return applyFilter(list, filter)
+    .flatMap(endpointMapper)
+    .filter((item): item is Record<string, any> => checkNotNullish(item))
+}
+
+export const getSingboxNodeNames = function (
+  list: ReadonlyArray<PossibleNodeConfigType>,
+  filter?: NodeFilterType | SortedNodeFilterType,
+  options: FormatterOptions = {},
+): ReadonlyArray<string> {
+  /* istanbul ignore next -- @preserve */
+  if (arguments.length === 2 && typeof filter === 'undefined') {
+    throw new Error(ERR_INVALID_FILTER)
+  }
+
+  return [
+    ...getSingboxNodes(list, filter, options),
+    ...getSingboxEndpoints(list, filter),
+  ].map((item) => item.tag)
+}
+
+const typeMap = {
+  [NodeTypeEnum.HTTP]: 'http',
+  [NodeTypeEnum.HTTPS]: 'http',
+  [NodeTypeEnum.Shadowsocks]: 'shadowsocks',
+  [NodeTypeEnum.Vmess]: 'vmess',
+  [NodeTypeEnum.Vless]: 'vless',
+  [NodeTypeEnum.Trojan]: 'trojan',
+  [NodeTypeEnum.Socks5]: 'socks',
+  [NodeTypeEnum.Tuic]: 'tuic',
+  [NodeTypeEnum.Hysteria2]: 'hysteria2',
+  [NodeTypeEnum.AnyTLS]: 'anytls',
+  [NodeTypeEnum.Snell]: 'snell',
+} as const
+
+const networkNodeTypes: ReadonlySet<NodeTypeEnum> = new Set([
+  NodeTypeEnum.Shadowsocks,
+  NodeTypeEnum.Vmess,
+  NodeTypeEnum.Vless,
+  NodeTypeEnum.Trojan,
+  NodeTypeEnum.Socks5,
+  NodeTypeEnum.Tuic,
+  NodeTypeEnum.Hysteria2,
+  NodeTypeEnum.Snell,
+])
+
+const tlsNodeTypes: ReadonlySet<NodeTypeEnum> = new Set([
+  NodeTypeEnum.HTTPS,
+  NodeTypeEnum.Vmess,
+  NodeTypeEnum.Vless,
+  NodeTypeEnum.Trojan,
+  NodeTypeEnum.Tuic,
+  NodeTypeEnum.Hysteria2,
+  NodeTypeEnum.AnyTLS,
+])
+
+const requiredTlsNodeTypes: ReadonlySet<NodeTypeEnum> = new Set([
+  NodeTypeEnum.HTTPS,
+  NodeTypeEnum.Tuic,
+  NodeTypeEnum.Hysteria2,
+  NodeTypeEnum.AnyTLS,
+])
+
+const singboxUtlsFingerprints = new Set([
+  'chrome',
+  'firefox',
+  'edge',
+  'safari',
+  '360',
+  'qq',
+  'ios',
+  'android',
+  'random',
+  'randomized',
+])
+
+/**
+ * @see https://sing-box.sagernet.org/configuration/outbound/
+ */
+function nodeListMapper(nodeConfig: PossibleNodeConfigType, logger: Logger) {
+  if (
+    nodeConfig.type === NodeTypeEnum.Tailscale ||
+    nodeConfig.type === NodeTypeEnum.Wireguard
+  ) {
+    return null
+  }
+  if (nodeConfig.type in typeMap === false) {
+    logger.warn(
+      `不支持为 sing-box 生成 ${nodeConfig.type} 的节点，节点 ${nodeConfig.nodeName} 会被忽略`,
+    )
+    return null
+  }
+  const node: Record<string, any> = {
+    type: typeMap[nodeConfig.type as keyof typeof typeMap],
+    tag: nodeConfig.nodeName,
+  }
+  if ('hostname' in nodeConfig) {
+    node.server = nodeConfig.hostname
+  }
+  if ('port' in nodeConfig) {
+    node.server_port = Number(nodeConfig.port)
+  }
+  if (
+    networkNodeTypes.has(nodeConfig.type) &&
+    'udpRelay' in nodeConfig &&
+    nodeConfig.udpRelay === false
+  ) {
+    node.network = 'tcp'
+  }
+
+  const setTls = (field: string, v: any) => {
+    if (!node.tls) {
+      node.tls = { enabled: true }
+    }
+    node.tls[field] = v
+  }
+
+  switch (nodeConfig.type) {
+    case NodeTypeEnum.Shadowsocks:
+      node.method = nodeConfig.method
+      node.password = nodeConfig.password
+      if (nodeConfig.obfs) {
+        if (['tls', 'http'].includes(nodeConfig.obfs)) {
+          node.plugin = 'obfs-local'
+          node.plugin_opts = stringifySip003Options(
+            prune({
+              obfs: nodeConfig.obfs,
+              'obfs-host': nodeConfig.obfsHost,
+            }),
+          )
+        }
+        if (['ws', 'wss', 'quic'].includes(nodeConfig.obfs)) {
+          node.plugin = 'v2ray-plugin'
+          node.plugin_opts = stringifySip003Options(
+            prune({
+              mode: nodeConfig.obfs === 'quic' ? 'quic' : 'websocket',
+              tls: ['wss', 'quic'].includes(nodeConfig.obfs),
+              host: nodeConfig.obfsHost,
+              path: nodeConfig.obfsUri,
+              mux: nodeConfig.mux === false ? 0 : null,
+            }),
+          )
+        }
+      }
+      break
+
+    case NodeTypeEnum.Vless:
+    case NodeTypeEnum.Vmess: {
+      node.uuid = nodeConfig.uuid
+      if (nodeConfig.type === NodeTypeEnum.Vmess) {
+        node.security = nodeConfig.method
+        if (nodeConfig.alterId) {
+          node.alter_id = Number(nodeConfig.alterId)
+        }
+      }
+      if (nodeConfig.type === NodeTypeEnum.Vless) {
+        node.flow = nodeConfig.flow
+        if (nodeConfig.realityOpts) {
+          setTls('utls', {
+            enabled: true,
+          })
+          setTls('reality', {
+            enabled: true,
+            public_key: nodeConfig.realityOpts.publicKey,
+            short_id: nodeConfig.realityOpts.shortId,
+          })
+        }
+      }
+
+      switch (nodeConfig.network) {
+        case 'http':
+          node.transport = {
+            type: 'http',
+            // host: [],
+            path: nodeConfig.httpOpts?.path[0],
+            method: nodeConfig.httpOpts?.method,
+            headers: normalizeHeaders(nodeConfig.httpOpts?.headers),
+            // idle_timeout: '15s',
+            // ping_timeout: '15s',
+          }
+          break
+
+        case 'ws':
+          node.transport = {
+            type: 'ws',
+            path: nodeConfig.wsOpts?.path,
+            headers: normalizeHeaders(nodeConfig.wsOpts?.headers),
+            // max_early_data: 0,
+            // early_data_header_name: '',
+          }
+          break
+
+        case 'quic':
+          node.transport = {
+            type: 'quic',
+          }
+          break
+
+        case 'grpc':
+          node.transport = {
+            type: 'grpc',
+            service_name: nodeConfig.grpcOpts?.serviceName,
+            // idle_timeout: '15s',
+            // ping_timeout: '15s',
+            // permit_without_stream: false,
+          }
+          break
+
+        case 'httpupgrade':
+          node.transport = {
+            type: 'httpupgrade',
+            host: nodeConfig.httpUpgradeOpts?.host,
+            path: nodeConfig.httpUpgradeOpts?.path,
+            headers: normalizeHeaders(nodeConfig.httpUpgradeOpts?.headers),
+          }
+          break
+
+        case 'tcp':
+          break
+
+        default:
+          logger.warn(
+            `sing-box 的 ${nodeConfig.type} 节点不支持 network=${nodeConfig.network}，节点 ${nodeConfig.nodeName} 会被忽略`,
+          )
+          return null
+      }
+      break
+    }
+
+    case NodeTypeEnum.HTTP:
+    case NodeTypeEnum.HTTPS:
+      node.username = nodeConfig.username
+      node.password = nodeConfig.password
+      node.path = nodeConfig.path
+      node.headers = normalizeHeaders(nodeConfig.headers)
+      if (nodeConfig.type === NodeTypeEnum.HTTPS) {
+        setTls('enabled', true)
+      }
+      break
+
+    case NodeTypeEnum.Trojan:
+      node.password = nodeConfig.password
+      if (nodeConfig.network) {
+        switch (nodeConfig.network) {
+          case 'tcp':
+            break
+
+          case 'ws':
+            node.transport = {
+              type: 'ws',
+              path: nodeConfig.wsPath,
+              headers: normalizeHeaders(nodeConfig.wsHeaders),
+              // max_early_data: 0,
+              // early_data_header_name: '',
+            }
+            break
+
+          default:
+            logger.warn(
+              `sing-box 的 ${nodeConfig.type} 节点不支持 network=${nodeConfig.network}，节点 ${nodeConfig.nodeName} 会被忽略`,
+            )
+            return null
+        }
+      }
+      break
+
+    case NodeTypeEnum.Socks5:
+      node.username = nodeConfig.username
+      node.password = nodeConfig.password
+      break
+
+    case NodeTypeEnum.Tuic:
+      if ('uuid' in nodeConfig === false) {
+        logger.warn(
+          `sing-box 仅支持 tuic v5，节点 ${nodeConfig.nodeName} 会被忽略`,
+        )
+        return null
+      }
+      node.uuid = nodeConfig.uuid
+      node.password = nodeConfig.password
+      node.congestion_control = nodeConfig.congestionControl
+      // udp_relay_mode: 'native',
+      // udp_over_stream: false,
+      // zero_rtt_handshake: false,
+      // heartbeat: '10s',
+      break
+
+    case NodeTypeEnum.Hysteria2:
+      node.up_mbps = nodeConfig.uploadBandwidth
+      node.down_mbps = nodeConfig.downloadBandwidth
+      if (nodeConfig.obfs) {
+        node.obfs = {
+          type: nodeConfig.obfs,
+          password: nodeConfig.obfsPassword,
+        }
+      }
+      node.password = nodeConfig.password
+
+      if (nodeConfig.portHopping) {
+        const ports = nodeConfig.portHopping
+          .split(/[;,]/)
+          .map((portConfig) => portConfig.trim())
+          .filter((portConfig) => portConfig.includes('-'))
+          .map((portConfig) => portConfig.replace(/-/g, ':'))
+        node.server_ports = ports
+      }
+
+      if (nodeConfig.portHoppingInterval) {
+        node.hop_interval = `${nodeConfig.portHoppingInterval}s`
+      }
+
+      break
+
+    case NodeTypeEnum.AnyTLS:
+      node.password = nodeConfig.password
+      if (nodeConfig.idleSessionCheckInterval !== undefined) {
+        node.idle_session_check_interval = `${nodeConfig.idleSessionCheckInterval}s`
+      }
+      if (nodeConfig.idleSessionTimeout !== undefined) {
+        node.idle_session_timeout = `${nodeConfig.idleSessionTimeout}s`
+      }
+      if (nodeConfig.minIdleSessions !== undefined) {
+        node.min_idle_session = nodeConfig.minIdleSessions
+      }
+      break
+
+    case NodeTypeEnum.Snell:
+      if (!applySnellOptions(node, nodeConfig, logger)) {
+        return null
+      }
+      break
+  }
+
+  if (requiredTlsNodeTypes.has(nodeConfig.type)) {
+    setTls('enabled', true)
+  }
+
+  if (tlsNodeTypes.has(nodeConfig.type)) {
+    if ('tls' in nodeConfig && nodeConfig.tls) {
+      setTls('enabled', true)
+    }
+    const r = TlsNodeConfigValidator.safeParse(nodeConfig)
+    if (r.success) {
+      const tlsConfig = r.data
+      if (tlsConfig.sni) {
+        setTls('server_name', tlsConfig.sni)
+      }
+      if (tlsConfig.skipCertVerify) {
+        setTls('insecure', true)
+      }
+      if (tlsConfig.alpn) {
+        setTls('alpn', tlsConfig.alpn)
+      }
+      if (tlsConfig.tls13) {
+        setTls('min_version', '1.3')
+      }
+      if (tlsConfig.clientFingerprint) {
+        const utls: Record<string, unknown> = { enabled: true }
+        if (singboxUtlsFingerprints.has(tlsConfig.clientFingerprint)) {
+          utls.fingerprint = tlsConfig.clientFingerprint
+        } else {
+          logger.warn(
+            `sing-box 不支持 uTLS fingerprint=${tlsConfig.clientFingerprint}，节点 ${nodeConfig.nodeName} 将使用默认 fingerprint`,
+          )
+        }
+        setTls('utls', utls)
+      }
+    }
+  }
+  if ('multiplex' in nodeConfig) {
+    const r = MultiplexValidator.safeParse(nodeConfig.multiplex)
+    if (r.success) {
+      const multiplexConfig = r.data
+      node.multiplex = pickAndFormatKeys(
+        multiplexConfig,
+        ['protocol', 'maxConnections', 'minStreams', 'maxStreams', 'padding'],
+        { keyFormat: 'snakeCase' },
+      )
+      node.multiplex.enabled = true
+      if (multiplexConfig.brutal) {
+        node.multiplex.brutal = {
+          enabled: true,
+          ...pickAndFormatKeys(multiplexConfig.brutal, ['upMbps', 'downMbps'], {
+            keyFormat: 'snakeCase',
+          }),
+        }
+      }
+    }
+  }
+  if (nodeConfig.tfo) {
+    if (nodeConfig.type === NodeTypeEnum.AnyTLS) {
+      logger.warn(
+        `sing-box 的 AnyTLS 不支持 TCP Fast Open，节点 ${nodeConfig.nodeName} 将忽略 tfo`,
+      )
+    } else {
+      node.tcp_fast_open = true
+    }
+  }
+  if (nodeConfig.mptcp) {
+    node.tcp_multi_path = true
+  }
+  if (nodeConfig.underlyingProxy) {
+    node.detour = nodeConfig.underlyingProxy
+  }
+  if (!nodeConfig.shadowTls) {
+    return prune(node)
+  }
+  const { server, server_port, ..._node } = node
+  const tag = `${node.tag}-shadowtls`
+  _node.detour = tag
+  return [
+    prune(_node),
+    prune({
+      type: 'shadowtls',
+      tag: tag,
+      server: server,
+      server_port: server_port,
+      version: nodeConfig.shadowTls.version,
+      password: nodeConfig.shadowTls.password,
+      tls: {
+        enabled: true,
+        server_name: nodeConfig.shadowTls.sni,
+      },
+    }),
+  ]
+}
+
+const SNELL_V6_PSK_MIN_BYTES = 12
+const SNELL_V6_PSK_MAX_BYTES = 255
+
+/**
+ * sing-box 仅支持 Snell v4 和 v6。它不实现 v5 的 QUIC 模式，v5 的线路协议与 v4
+ * 相同，所以 v5 节点按 v4 输出。
+ *
+ * 返回 false 表示该节点无法在 sing-box 中使用，应当忽略。
+ *
+ * @see https://sing-box.sagernet.org/configuration/outbound/snell/
+ */
+function applySnellOptions(
+  node: Record<string, any>,
+  nodeConfig: SnellNodeConfig,
+  logger: Logger,
+): boolean {
+  const version = Number(nodeConfig.version)
+  if (![4, 5, 6].includes(version)) {
+    logger.warn(
+      `sing-box 的 snell 节点仅支持 v4、v5 和 v6，节点 ${nodeConfig.nodeName} 会被忽略`,
+    )
+    return false
+  }
+  if (version === 5) {
+    logger.warn(
+      `sing-box 将 Snell v5 按 v4 处理，节点 ${nodeConfig.nodeName} 输出 version=4`,
+    )
+  }
+
+  node.version = version === 6 ? 6 : 4
+  node.psk = nodeConfig.psk
+  node.userkey = nodeConfig.userkey
+  if (nodeConfig.reuse) {
+    node.reuse = true
+  }
+
+  return version === 6
+    ? applySnellV6Options(node, nodeConfig, logger)
+    : applySnellV4Options(node, nodeConfig, logger)
+}
+
+function applySnellV4Options(
+  node: Record<string, any>,
+  nodeConfig: SnellNodeConfig,
+  logger: Logger,
+): boolean {
+  if (nodeConfig.obfs === 'tls') {
+    logger.warn(
+      `sing-box 的 snell 节点仅支持 http 混淆，节点 ${nodeConfig.nodeName} 会被忽略`,
+    )
+    return false
+  }
+  if (nodeConfig.obfs === 'http') {
+    node.obfs_mode = 'http'
+    node.obfs_host = nodeConfig.obfsHost
+  }
+  return true
+}
+
+function applySnellV6Options(
+  node: Record<string, any>,
+  nodeConfig: SnellNodeConfig,
+  logger: Logger,
+): boolean {
+  const pskBytes = new TextEncoder().encode(nodeConfig.psk).length
+  if (pskBytes < SNELL_V6_PSK_MIN_BYTES || pskBytes > SNELL_V6_PSK_MAX_BYTES) {
+    logger.warn(
+      `sing-box 的 snell v6 要求 psk 长度为 ${SNELL_V6_PSK_MIN_BYTES} 到 ${SNELL_V6_PSK_MAX_BYTES} 字节，节点 ${nodeConfig.nodeName} 会被忽略`,
+    )
+    return false
+  }
+  if (nodeConfig.obfs) {
+    logger.warn(`snell v6 不支持混淆，节点 ${nodeConfig.nodeName} 将忽略 obfs`)
+  }
+  node.mode = nodeConfig.mode
+  return true
+}
+
+/**
+ * @see https://sing-box.sagernet.org/configuration/endpoint/wireguard
+ * @see https://sing-box.sagernet.org/configuration/endpoint/tailscale
+ */
+function endpointMapper(nodeConfig: PossibleNodeConfigType) {
+  switch (nodeConfig.type) {
+    case NodeTypeEnum.Tailscale:
+      return prune(
+        applyEndpointDialOptions(
+          {
+            type: 'tailscale',
+            tag: nodeConfig.nodeName,
+            auth_key: nodeConfig.authKey,
+            control_url: nodeConfig.controlUrl,
+            ephemeral: nodeConfig.ephemeral,
+            hostname: nodeConfig.hostname,
+            accept_routes: nodeConfig.acceptRoutes,
+            exit_node: nodeConfig.exitNode,
+            exit_node_allow_lan_access: nodeConfig.exitNodeAllowLanAccess,
+            state_directory: nodeConfig.stateDir,
+            routing_mark: nodeConfig.routingMark,
+          },
+          nodeConfig,
+        ),
+      )
+
+    case NodeTypeEnum.Wireguard: {
+      const address = [`${nodeConfig.selfIp}/32`]
+      if (nodeConfig.selfIpV6) {
+        address.push(`${nodeConfig.selfIpV6}/128`)
+      }
+      const defaultAllowedIps = nodeConfig.selfIpV6
+        ? ['0.0.0.0/0', '::/0']
+        : ['0.0.0.0/0']
+
+      return prune(
+        applyEndpointDialOptions(
+          {
+            type: 'wireguard',
+            tag: nodeConfig.nodeName,
+            address,
+            private_key: nodeConfig.privateKey,
+            peers: nodeConfig.peers.map((peer) => {
+              const endpoint = new URL(`http://${peer.endpoint}`)
+              const allowedIps = peer.allowedIps
+                ?.split(',')
+                .map((ip) => ip.trim())
+                .filter(Boolean)
+              return {
+                address: endpoint.hostname,
+                port: Number(endpoint.port),
+                public_key: peer.publicKey,
+                pre_shared_key: peer.presharedKey,
+                allowed_ips:
+                  allowedIps && allowedIps.length > 0
+                    ? allowedIps
+                    : defaultAllowedIps,
+                persistent_keepalive_interval:
+                  peer.keepalive !== undefined
+                    ? `${peer.keepalive}s`
+                    : undefined,
+                reserved: peer.reservedBits,
+              }
+            }),
+            mtu: nodeConfig.mtu,
+          },
+          nodeConfig,
+        ),
+      )
+    }
+
+    default:
+      return null
+  }
+}
+
+function applyEndpointDialOptions(
+  endpoint: Record<string, any>,
+  nodeConfig: PossibleNodeConfigType,
+) {
+  if (nodeConfig.tfo) {
+    endpoint.tcp_fast_open = true
+  }
+  if (nodeConfig.mptcp) {
+    endpoint.tcp_multi_path = true
+  }
+  if (nodeConfig.underlyingProxy) {
+    endpoint.detour = nodeConfig.underlyingProxy
+  }
+  return endpoint
+}
+
+function normalizeHeaders(headers: Record<string, string> | undefined) {
+  if (!headers) {
+    return {}
+  }
+  return Object.fromEntries(Object.entries(headers).map(([k, v]) => [k, [v]]))
+}
+
+// delete all undefined / null / [] / {} / '' properties
+function prune(obj: Record<string, any>): Record<string, any> {
+  const prunedObj: Record<string, any> = {}
+
+  for (const key in obj) {
+    const value = obj[key]
+
+    // Check if the property exists and is not null or undefined
+    if (value !== null && value !== undefined) {
+      // Check if the property is an array
+      if (Array.isArray(value)) {
+        // Check if the array is empty
+        if (value.length > 0) {
+          prunedObj[key] = value
+        }
+      } else if (typeof value === 'object') {
+        const nested = prune(value)
+        if (Object.keys(nested).length > 0) {
+          prunedObj[key] = nested
+        }
+      } else if (typeof value === 'string') {
+        // Check if the string is not empty
+        if (value.trim().length > 0) {
+          prunedObj[key] = value
+        }
+      } else {
+        // Add non-empty string, number, or boolean values
+        prunedObj[key] = value
+      }
+    }
+  }
+
+  return prunedObj
+}

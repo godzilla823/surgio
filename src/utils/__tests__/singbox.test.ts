@@ -1,0 +1,1450 @@
+import { describe, expect, test, vi } from 'vitest'
+
+import { NodeTypeEnum, PossibleNodeConfigType } from '../../types.js'
+import { Hysteria2NodeConfigValidator } from '../../validators/index.js'
+import * as singbox from '../singbox.js'
+
+const nodeList: ReadonlyArray<PossibleNodeConfigType> = [
+  {
+    nodeName: 'disabled',
+    type: NodeTypeEnum.Shadowsocks,
+    enable: false,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+  },
+  {
+    nodeName: 'ss',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+  },
+  {
+    nodeName: 'ss.complex',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'http',
+    obfsHost: 'example.com',
+    obfsUri: '/obfs',
+    skipCertVerify: true,
+    wsHeaders: {
+      foo: 'bar',
+    },
+    tls13: true,
+    mux: true,
+    multiplex: {
+      protocol: 'smux',
+      maxConnections: 2,
+      minStreams: 1,
+      maxStreams: 0,
+      padding: true,
+      brutal: {
+        upMbps: 100,
+        downMbps: 100,
+      },
+    },
+    tfo: true,
+    mptcp: true,
+    shadowTls: {
+      version: 3,
+      password: 'password',
+      sni: 'example.com',
+    },
+    underlyingProxy: 'vmess.ws',
+  },
+  {
+    nodeName: 'ss.tls',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'tls',
+    obfsHost: 'example.com',
+  },
+  {
+    nodeName: 'ss.http',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'http',
+    obfsHost: 'example.com',
+  },
+  {
+    nodeName: 'ss.ws',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'ws',
+    obfsHost: 'example.com',
+    obfsUri: '/obfs',
+    wsHeaders: {
+      foo: 'bar',
+    },
+    mux: false,
+  },
+  {
+    nodeName: 'ss.wss',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'wss',
+    obfsHost: 'example.com',
+    obfsUri: '/obfs',
+    wsHeaders: {
+      foo: 'bar',
+    },
+    mux: true,
+  },
+  {
+    nodeName: 'ss.quic',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    obfs: 'quic',
+    obfsHost: 'example.com',
+    obfsUri: '/obfs',
+    wsHeaders: {
+      foo: 'bar',
+    },
+    mux: true,
+  },
+  {
+    nodeName: 'vmess.tcp',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 1,
+    network: 'tcp',
+  },
+  {
+    nodeName: 'vmess.h2NotSupported',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'h2',
+    h2Opts: {
+      path: '/foo',
+      host: ['example.com'],
+    },
+  },
+  {
+    nodeName: 'vmess.complex',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'ws',
+    wsOpts: {
+      path: '/foo',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+    tls: true,
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+    multiplex: {
+      protocol: 'smux',
+      maxConnections: 2,
+      minStreams: 1,
+      maxStreams: 0,
+      padding: true,
+      brutal: {
+        upMbps: 100,
+        downMbps: 100,
+      },
+    },
+    tfo: true,
+    mptcp: true,
+    shadowTls: {
+      version: 3,
+      password: 'password',
+      sni: 'example.com',
+    },
+    underlyingProxy: 'ss',
+  },
+  {
+    nodeName: 'vmess.http',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'http',
+    httpOpts: {
+      path: ['/foo'],
+      headers: {
+        Host: 'example.com',
+      },
+      method: 'POST',
+    },
+  },
+  {
+    nodeName: 'vmess.ws',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'ws',
+    wsOpts: {
+      path: '/foo',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+  },
+  {
+    nodeName: 'vmess.quic',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'quic',
+  },
+  {
+    nodeName: 'vmess.grpc',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'grpc',
+    grpcOpts: {
+      serviceName: 'example',
+    },
+  },
+  {
+    nodeName: 'vmess.httpupgrade',
+    type: NodeTypeEnum.Vmess,
+    hostname: 'example.com',
+    port: 443,
+    method: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alterId: 0,
+    network: 'httpupgrade',
+    httpUpgradeOpts: {
+      path: '/foo',
+      host: 'example.com',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+  },
+  {
+    nodeName: 'vless.tcp',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'tcp',
+  },
+  {
+    nodeName: 'vless.h2NotSupported',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'h2',
+    h2Opts: {
+      path: '/foo',
+      host: ['example.com'],
+    },
+  },
+  {
+    nodeName: 'vless.complex',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'ws',
+    wsOpts: {
+      path: '/foo',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    multiplex: {
+      protocol: 'smux',
+      maxConnections: 2,
+      minStreams: 1,
+      maxStreams: 0,
+      padding: true,
+      brutal: {
+        upMbps: 100,
+        downMbps: 100,
+      },
+    },
+    tfo: true,
+    mptcp: true,
+    shadowTls: {
+      version: 3,
+      password: 'password',
+      sni: 'example.com',
+    },
+    underlyingProxy: 'ss',
+  },
+  {
+    nodeName: 'vless.http',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'http',
+    httpOpts: {
+      path: ['/foo'],
+      headers: {
+        Host: 'example.com',
+      },
+      method: 'POST',
+    },
+  },
+  {
+    nodeName: 'vless.ws',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'ws',
+    wsOpts: {
+      path: '/foo',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+  },
+  {
+    nodeName: 'vless.quic',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'quic',
+  },
+  {
+    nodeName: 'vless.grpc',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'grpc',
+    grpcOpts: {
+      serviceName: 'example',
+    },
+  },
+  {
+    nodeName: 'vless.httpupgrade',
+    type: NodeTypeEnum.Vless,
+    hostname: 'example.com',
+    port: 443,
+    method: 'none',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    realityOpts: {
+      publicKey: 'publicKey',
+      shortId: 'shortId',
+    },
+    clientFingerprint: 'chrome',
+    network: 'httpupgrade',
+    httpUpgradeOpts: {
+      path: '/foo',
+      host: 'example.com',
+      headers: {
+        Host: 'example.com',
+      },
+    },
+  },
+  {
+    nodeName: 'http',
+    type: NodeTypeEnum.HTTP,
+    hostname: 'example.com',
+    port: 80,
+    username: 'username',
+    password: 'password',
+    path: '/foo',
+    headers: {
+      Host: 'example.com',
+    },
+  },
+  {
+    nodeName: 'https',
+    type: NodeTypeEnum.HTTPS,
+    hostname: 'example.com',
+    port: 443,
+    username: 'username',
+    password: 'password',
+    path: '/foo',
+    headers: {
+      Host: 'example.com',
+    },
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+  },
+  {
+    nodeName: 'trojan.tcp',
+    type: NodeTypeEnum.Trojan,
+    hostname: 'example.com',
+    port: 443,
+    password: 'password',
+    network: 'tcp',
+  },
+  {
+    nodeName: 'trojan.ws',
+    type: NodeTypeEnum.Trojan,
+    hostname: 'example.com',
+    port: 443,
+    password: 'password',
+    network: 'ws',
+    wsPath: '/foo',
+    wsHeaders: {
+      Host: 'example.com',
+    },
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+    multiplex: {
+      protocol: 'smux',
+      maxConnections: 2,
+      minStreams: 1,
+      maxStreams: 0,
+      padding: true,
+      brutal: {
+        upMbps: 100,
+        downMbps: 100,
+      },
+    },
+  },
+  {
+    nodeName: 'socks',
+    type: NodeTypeEnum.Socks5,
+    hostname: 'example.com',
+    port: 8080,
+    username: 'username',
+    password: 'password',
+    udpRelay: true,
+    tls: true,
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+  },
+  {
+    nodeName: 'tuic.versionNotSupported',
+    type: NodeTypeEnum.Tuic,
+    hostname: 'example.com',
+    port: 443,
+    token: 'token',
+  },
+  {
+    nodeName: 'tuic',
+    type: NodeTypeEnum.Tuic,
+    hostname: 'example.com',
+    port: 443,
+    password: 'password',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    version: 5,
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+    congestionControl: 'bbr',
+  },
+  {
+    nodeName: 'hysteria2',
+    type: NodeTypeEnum.Hysteria2,
+    hostname: 'example.com',
+    port: 443,
+    portHopping: '5000-6000,8000-9000',
+    portHoppingInterval: 30,
+    password: 'password',
+    downloadBandwidth: 100,
+    uploadBandwidth: 100,
+    obfs: 'salamander',
+    obfsPassword: 'password',
+    sni: 'example.com',
+    tls13: true,
+    skipCertVerify: true,
+    alpn: ['h2', 'http/1.1'],
+    clientFingerprint: 'chrome',
+  },
+  {
+    nodeName: 'anytls',
+    type: NodeTypeEnum.AnyTLS,
+    hostname: 'example.com',
+    port: 443,
+    password: 'password',
+    udpRelay: false,
+    idleSessionCheckInterval: 30,
+    idleSessionTimeout: 45,
+    minIdleSessions: 0,
+  },
+  {
+    nodeName: 'snell.versionNotSupported',
+    type: NodeTypeEnum.Snell,
+    hostname: 'example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    version: 3,
+  },
+  {
+    nodeName: 'snell.tlsObfsNotSupported',
+    type: NodeTypeEnum.Snell,
+    hostname: 'example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    version: 4,
+    obfs: 'tls',
+  },
+  {
+    nodeName: 'snell.v4',
+    type: NodeTypeEnum.Snell,
+    hostname: 'example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    version: 4,
+    obfs: 'http',
+    obfsHost: 'bing.com',
+    obfsUri: '/obfs',
+    reuse: true,
+    udpRelay: false,
+  },
+  {
+    nodeName: 'snell.v5',
+    type: NodeTypeEnum.Snell,
+    hostname: 'example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    version: 5,
+  },
+  {
+    nodeName: 'snell.v6',
+    type: NodeTypeEnum.Snell,
+    hostname: 'example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    version: 6,
+    userkey: 'userkey',
+    mode: 'unshaped',
+  },
+  {
+    nodeName: 'wg',
+    type: NodeTypeEnum.Wireguard,
+    selfIp: '10.0.0.1',
+    selfIpV6: '2001:db8:85a3::8a2e:370:7334',
+    privateKey: 'privateKey',
+    mtu: 1420,
+    peers: [
+      {
+        publicKey: 'publicKey1',
+        endpoint: 'wg1.example.com:51820',
+        allowedIps: '0.0.0.0/0, ::/0',
+        keepalive: 25,
+        presharedKey: 'presharedKey1',
+        reservedBits: [1, 2, 3],
+      },
+      {
+        publicKey: 'publicKey2',
+        endpoint: 'wg2.example.com:51820',
+        allowedIps: '0.0.0.0/0, ::/0',
+        presharedKey: 'presharedKey2',
+        reservedBits: [2, 2, 3],
+      },
+      {
+        publicKey: 'publicKey3',
+        endpoint: '162.159.195.115:7156',
+        allowedIps: '0.0.0.0/0, ::/0',
+        presharedKey: 'presharedKey3',
+        reservedBits: [3, 2, 3],
+      },
+      {
+        publicKey: 'publicKey4',
+        endpoint: '[2606:4700:d0:0:8537:1837:8101:92fd]:942',
+        presharedKey: 'presharedKey4',
+        reservedBits: [4, 2, 3],
+      },
+    ],
+  },
+]
+
+const expectedNodes: Record<string, any>[] = [
+  {
+    type: 'shadowsocks',
+    tag: 'ss',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.complex',
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'obfs-local',
+    plugin_opts: 'obfs=http;obfs-host=example.com',
+    multiplex: {
+      protocol: 'smux',
+      max_connections: 2,
+      min_streams: 1,
+      max_streams: 0,
+      padding: true,
+      enabled: true,
+      brutal: { enabled: true, up_mbps: 100, down_mbps: 100 },
+    },
+    tcp_fast_open: true,
+    tcp_multi_path: true,
+    detour: 'ss.complex-shadowtls',
+  },
+  {
+    type: 'shadowtls',
+    tag: 'ss.complex-shadowtls',
+    server: 'example.com',
+    server_port: 443,
+    version: 3,
+    password: 'password',
+    tls: { enabled: true, server_name: 'example.com' },
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.tls',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'obfs-local',
+    plugin_opts: 'obfs=tls;obfs-host=example.com',
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.http',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'obfs-local',
+    plugin_opts: 'obfs=http;obfs-host=example.com',
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.ws',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'v2ray-plugin',
+    plugin_opts: 'host=example.com;mode=websocket;mux=0;path=/obfs;tls=false',
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.wss',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'v2ray-plugin',
+    plugin_opts: 'host=example.com;mode=websocket;path=/obfs;tls=true',
+  },
+  {
+    type: 'shadowsocks',
+    tag: 'ss.quic',
+    server: 'example.com',
+    server_port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+    plugin: 'v2ray-plugin',
+    plugin_opts: 'host=example.com;mode=quic;path=/obfs;tls=true',
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.tcp',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    alter_id: 1,
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.complex',
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: { type: 'ws', path: '/foo', headers: { Host: ['example.com'] } },
+    tls: {
+      enabled: true,
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+      utls: { enabled: true, fingerprint: 'chrome' },
+    },
+    multiplex: {
+      protocol: 'smux',
+      max_connections: 2,
+      min_streams: 1,
+      max_streams: 0,
+      padding: true,
+      enabled: true,
+      brutal: { enabled: true, up_mbps: 100, down_mbps: 100 },
+    },
+    tcp_fast_open: true,
+    tcp_multi_path: true,
+    detour: 'vmess.complex-shadowtls',
+  },
+  {
+    type: 'shadowtls',
+    tag: 'vmess.complex-shadowtls',
+    server: 'example.com',
+    server_port: 443,
+    version: 3,
+    password: 'password',
+    tls: { enabled: true, server_name: 'example.com' },
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.http',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: {
+      type: 'http',
+      path: '/foo',
+      method: 'POST',
+      headers: { Host: ['example.com'] },
+    },
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.ws',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: { type: 'ws', path: '/foo', headers: { Host: ['example.com'] } },
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.quic',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: { type: 'quic' },
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.grpc',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: { type: 'grpc', service_name: 'example' },
+  },
+  {
+    type: 'vmess',
+    tag: 'vmess.httpupgrade',
+    server: 'example.com',
+    server_port: 443,
+    security: 'auto',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    transport: {
+      type: 'httpupgrade',
+      host: 'example.com',
+      path: '/foo',
+      headers: { Host: ['example.com'] },
+    },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.tcp',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.complex',
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+    },
+    transport: { type: 'ws', path: '/foo', headers: { Host: ['example.com'] } },
+    multiplex: {
+      protocol: 'smux',
+      max_connections: 2,
+      min_streams: 1,
+      max_streams: 0,
+      padding: true,
+      enabled: true,
+      brutal: { enabled: true, up_mbps: 100, down_mbps: 100 },
+    },
+    tcp_fast_open: true,
+    tcp_multi_path: true,
+    detour: 'vless.complex-shadowtls',
+  },
+  {
+    type: 'shadowtls',
+    tag: 'vless.complex-shadowtls',
+    server: 'example.com',
+    server_port: 443,
+    version: 3,
+    password: 'password',
+    tls: { enabled: true, server_name: 'example.com' },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.http',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+    transport: {
+      type: 'http',
+      path: '/foo',
+      method: 'POST',
+      headers: { Host: ['example.com'] },
+    },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.ws',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+    transport: { type: 'ws', path: '/foo', headers: { Host: ['example.com'] } },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.quic',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+    transport: { type: 'quic' },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.grpc',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+    transport: { type: 'grpc', service_name: 'example' },
+  },
+  {
+    type: 'vless',
+    tag: 'vless.httpupgrade',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    flow: 'xtls-rprx-vision',
+    tls: {
+      enabled: true,
+      utls: { enabled: true, fingerprint: 'chrome' },
+      reality: { enabled: true, public_key: 'publicKey', short_id: 'shortId' },
+    },
+    transport: {
+      type: 'httpupgrade',
+      host: 'example.com',
+      path: '/foo',
+      headers: { Host: ['example.com'] },
+    },
+  },
+  {
+    type: 'http',
+    tag: 'http',
+    server: 'example.com',
+    server_port: 80,
+    username: 'username',
+    password: 'password',
+    path: '/foo',
+    headers: { Host: ['example.com'] },
+  },
+  {
+    type: 'http',
+    tag: 'https',
+    server: 'example.com',
+    server_port: 443,
+    username: 'username',
+    password: 'password',
+    path: '/foo',
+    headers: { Host: ['example.com'] },
+    tls: {
+      enabled: true,
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+      utls: { enabled: true, fingerprint: 'chrome' },
+    },
+  },
+  {
+    type: 'trojan',
+    tag: 'trojan.tcp',
+    server: 'example.com',
+    server_port: 443,
+    password: 'password',
+  },
+  {
+    type: 'trojan',
+    tag: 'trojan.ws',
+    server: 'example.com',
+    server_port: 443,
+    password: 'password',
+    transport: { type: 'ws', path: '/foo', headers: { Host: ['example.com'] } },
+    tls: {
+      enabled: true,
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+      utls: { enabled: true, fingerprint: 'chrome' },
+    },
+    multiplex: {
+      protocol: 'smux',
+      max_connections: 2,
+      min_streams: 1,
+      max_streams: 0,
+      padding: true,
+      enabled: true,
+      brutal: { enabled: true, up_mbps: 100, down_mbps: 100 },
+    },
+  },
+  {
+    type: 'socks',
+    tag: 'socks',
+    server: 'example.com',
+    server_port: 8080,
+    username: 'username',
+    password: 'password',
+  },
+  {
+    type: 'tuic',
+    tag: 'tuic',
+    server: 'example.com',
+    server_port: 443,
+    uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+    password: 'password',
+    congestion_control: 'bbr',
+    tls: {
+      enabled: true,
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+      utls: { enabled: true, fingerprint: 'chrome' },
+    },
+  },
+  {
+    type: 'hysteria2',
+    tag: 'hysteria2',
+    server: 'example.com',
+    server_port: 443,
+    server_ports: ['5000:6000', '8000:9000'],
+    hop_interval: '30s',
+    up_mbps: 100,
+    down_mbps: 100,
+    obfs: { type: 'salamander', password: 'password' },
+    password: 'password',
+    tls: {
+      enabled: true,
+      server_name: 'example.com',
+      insecure: true,
+      alpn: ['h2', 'http/1.1'],
+      min_version: '1.3',
+      utls: { enabled: true, fingerprint: 'chrome' },
+    },
+  },
+  {
+    type: 'anytls',
+    tag: 'anytls',
+    server: 'example.com',
+    server_port: 443,
+    password: 'password',
+    idle_session_check_interval: '30s',
+    idle_session_timeout: '45s',
+    min_idle_session: 0,
+    tls: { enabled: true },
+  },
+  {
+    type: 'snell',
+    tag: 'snell.v4',
+    server: 'example.com',
+    server_port: 443,
+    network: 'tcp',
+    version: 4,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    reuse: true,
+    obfs_mode: 'http',
+    obfs_host: 'bing.com',
+  },
+  {
+    type: 'snell',
+    tag: 'snell.v5',
+    server: 'example.com',
+    server_port: 443,
+    version: 4,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+  },
+  {
+    type: 'snell',
+    tag: 'snell.v6',
+    server: 'example.com',
+    server_port: 443,
+    version: 6,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+    userkey: 'userkey',
+    mode: 'unshaped',
+  },
+]
+
+const wireguardEndpoint = {
+  type: 'wireguard',
+  tag: 'wg',
+  address: ['10.0.0.1/32', '2001:db8:85a3::8a2e:370:7334/128'],
+  private_key: 'privateKey',
+  peers: [
+    {
+      address: 'wg1.example.com',
+      port: 51820,
+      public_key: 'publicKey1',
+      persistent_keepalive_interval: '25s',
+      pre_shared_key: 'presharedKey1',
+      allowed_ips: ['0.0.0.0/0', '::/0'],
+      reserved: [1, 2, 3],
+    },
+    {
+      address: 'wg2.example.com',
+      port: 51820,
+      public_key: 'publicKey2',
+      pre_shared_key: 'presharedKey2',
+      allowed_ips: ['0.0.0.0/0', '::/0'],
+      reserved: [2, 2, 3],
+    },
+    {
+      address: '162.159.195.115',
+      port: 7156,
+      public_key: 'publicKey3',
+      pre_shared_key: 'presharedKey3',
+      allowed_ips: ['0.0.0.0/0', '::/0'],
+      reserved: [3, 2, 3],
+    },
+    {
+      address: '[2606:4700:d0:0:8537:1837:8101:92fd]',
+      port: 942,
+      public_key: 'publicKey4',
+      pre_shared_key: 'presharedKey4',
+      allowed_ips: ['0.0.0.0/0', '::/0'],
+      reserved: [4, 2, 3],
+    },
+  ],
+  mtu: 1420,
+}
+
+const expectedNodeNames = [...expectedNodes, wireguardEndpoint]
+  .map((node) => node.tag as string)
+  .filter((name) => !['NotSupported', 'disabled'].some((n) => name.includes(n)))
+
+test('getSingboxNodeNames', async () => {
+  expect(singbox.getSingboxNodeNames(nodeList)).toEqual(expectedNodeNames)
+
+  expect(
+    singbox.getSingboxNodeNames(
+      nodeList,
+      (nodeConfig) => nodeConfig.nodeName === 'ss',
+    ),
+  ).toEqual(['ss'])
+})
+
+test('getSingboxNodes', async () => {
+  expect(singbox.getSingboxNodes(nodeList)).toEqual(expectedNodes)
+
+  expect(
+    singbox.getSingboxNodes(
+      nodeList,
+      (nodeConfig) => nodeConfig.nodeName === 'ss',
+    ),
+  ).toEqual([expectedNodes[0]])
+})
+
+test('getSingboxEndpoints emits WireGuard endpoints', () => {
+  expect(singbox.getSingboxEndpoints(nodeList)).toEqual([wireguardEndpoint])
+  expect(
+    singbox.getSingboxNodes(nodeList).some((node) => node.type === 'wireguard'),
+  ).toBe(false)
+})
+
+test('required-TLS protocols always enable TLS and omit empty obfs', () => {
+  expect(
+    singbox.getSingboxNodes([
+      {
+        type: NodeTypeEnum.Tuic,
+        nodeName: 'minimal-tuic',
+        hostname: 'tuic.example.com',
+        port: 443,
+        uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+        password: 'password',
+        version: 5,
+      },
+      {
+        type: NodeTypeEnum.Hysteria2,
+        nodeName: 'minimal-hysteria2',
+        hostname: 'hysteria2.example.com',
+        port: 443,
+        password: 'password',
+        uploadBandwidth: 100,
+        downloadBandwidth: 100,
+      },
+    ]),
+  ).toEqual([
+    {
+      type: 'tuic',
+      tag: 'minimal-tuic',
+      server: 'tuic.example.com',
+      server_port: 443,
+      uuid: '1386f85e-657b-4d6e-9d56-78badb75e1fd',
+      password: 'password',
+      tls: { enabled: true },
+    },
+    {
+      type: 'hysteria2',
+      tag: 'minimal-hysteria2',
+      server: 'hysteria2.example.com',
+      server_port: 443,
+      up_mbps: 100,
+      down_mbps: 100,
+      password: 'password',
+      tls: { enabled: true },
+    },
+  ])
+})
+
+test('handles provider-normalized Hysteria2 port hopping', () => {
+  const node = Hysteria2NodeConfigValidator.parse({
+    type: NodeTypeEnum.Hysteria2,
+    nodeName: 'hysteria2-port-hopping',
+    hostname: 'hysteria2.example.com',
+    port: 443,
+    password: 'password',
+    uploadBandwidth: 100,
+    downloadBandwidth: 100,
+    portHopping: '5000-6000,8000-9000',
+  })
+
+  expect(node.portHopping).toBe('5000-6000;8000-9000')
+  expect(singbox.getSingboxNodes([node])[0].server_ports).toEqual([
+    '5000:6000',
+    '8000:9000',
+  ])
+})
+
+test('omits unsupported AnyTLS TCP Fast Open with a warning', () => {
+  const warn = vi.fn()
+  const [node] = singbox.getSingboxNodes(
+    [
+      {
+        type: NodeTypeEnum.AnyTLS,
+        nodeName: 'anytls-tfo',
+        hostname: 'anytls.example.com',
+        port: 443,
+        password: 'password',
+        tfo: true,
+      },
+    ],
+    undefined,
+    { logger: { warn } as any },
+  )
+
+  expect(node).not.toHaveProperty('tcp_fast_open')
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining('AnyTLS 不支持 TCP Fast Open'),
+  )
+})
+
+test('uses the default uTLS fingerprint for unsupported values', () => {
+  const warn = vi.fn()
+  const [node] = singbox.getSingboxNodes(
+    [
+      {
+        type: NodeTypeEnum.HTTPS,
+        nodeName: 'https-unsupported-fingerprint',
+        hostname: 'https.example.com',
+        port: 443,
+        clientFingerprint: 'chrome2',
+      },
+    ],
+    undefined,
+    { logger: { warn } as any },
+  )
+
+  expect(node.tls.utls).toEqual({ enabled: true })
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining('不支持 uTLS fingerprint=chrome2'),
+  )
+})
+
+describe('snell', () => {
+  const snellNode = {
+    type: NodeTypeEnum.Snell,
+    nodeName: 'snell',
+    hostname: 'snell.example.com',
+    port: 443,
+    psk: 'RjEJRhNPps3DrYBcEQrcMe3q9NzFLMP',
+  } as const
+
+  const getNodes = (overrides: Record<string, unknown>) => {
+    const warn = vi.fn()
+    const nodes = singbox.getSingboxNodes(
+      [{ ...snellNode, ...overrides } as PossibleNodeConfigType],
+      undefined,
+      { logger: { warn } as any },
+    )
+    return { nodes, warn }
+  }
+
+  test('outputs v5 as v4 with a warning', () => {
+    const { nodes, warn } = getNodes({ version: 5 })
+
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0].version).toBe(4)
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Snell v5 按 v4 处理'),
+    )
+  })
+
+  test('ignores nodes without a version', () => {
+    const { nodes, warn } = getNodes({})
+
+    expect(nodes).toEqual([])
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('仅支持 v4、v5 和 v6'),
+    )
+  })
+
+  test('ignores v4 nodes with tls obfs', () => {
+    const { nodes, warn } = getNodes({ version: 4, obfs: 'tls' })
+
+    expect(nodes).toEqual([])
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('仅支持 http 混淆'),
+    )
+  })
+
+  test.each([
+    ['too short', 'a'.repeat(11)],
+    ['too long', 'a'.repeat(256)],
+    // 86 个 3 字节字符共 258 字节，字符数仍在范围内
+    ['too long in bytes', '密'.repeat(86)],
+  ])('ignores v6 nodes whose psk is %s', (_, psk) => {
+    const { nodes, warn } = getNodes({ version: 6, psk })
+
+    expect(nodes).toEqual([])
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('要求 psk 长度为 12 到 255 字节'),
+    )
+  })
+
+  test('drops obfs from v6 nodes with a warning', () => {
+    const { nodes, warn } = getNodes({
+      version: 6,
+      obfs: 'http',
+      obfsHost: 'bing.com',
+    })
+
+    expect(nodes).toHaveLength(1)
+    expect(nodes[0]).not.toHaveProperty('obfs_mode')
+    expect(nodes[0]).not.toHaveProperty('obfs_host')
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('snell v6 不支持混淆'),
+    )
+  })
+})
+
+const tailscaleEndpoint = {
+  type: 'tailscale',
+  tag: 'ts',
+  auth_key: 'tskey-auth-xxxx',
+  control_url: 'https://controlplane.tailscale.com',
+  ephemeral: true,
+  hostname: 'surgio-node',
+  accept_routes: true,
+  exit_node: '100.64.0.1',
+  exit_node_allow_lan_access: false,
+  state_directory: '/var/lib/tailscale',
+  routing_mark: 1234,
+  detour: 'proxy',
+}
+
+const tailscaleNodeList: ReadonlyArray<PossibleNodeConfigType> = [
+  {
+    type: NodeTypeEnum.Tailscale,
+    nodeName: 'ts',
+    authKey: 'tskey-auth-xxxx',
+    controlUrl: 'https://controlplane.tailscale.com',
+    ephemeral: true,
+    hostname: 'surgio-node',
+    acceptRoutes: true,
+    exitNode: '100.64.0.1',
+    exitNodeAllowLanAccess: false,
+    stateDir: '/var/lib/tailscale',
+    routingMark: 1234,
+    underlyingProxy: 'proxy',
+  },
+  {
+    nodeName: 'ss',
+    type: NodeTypeEnum.Shadowsocks,
+    hostname: 'example.com',
+    port: 443,
+    method: 'chacha20-ietf-poly1305',
+    password: 'password',
+  },
+]
+
+test('getSingboxEndpoints', async () => {
+  expect(singbox.getSingboxEndpoints(tailscaleNodeList)).toEqual([
+    tailscaleEndpoint,
+  ])
+
+  expect(
+    singbox.getSingboxEndpoints(
+      tailscaleNodeList,
+      (nodeConfig) => nodeConfig.nodeName === 'ts',
+    ),
+  ).toEqual([tailscaleEndpoint])
+})
+
+test('Tailscale is emitted as an endpoint, not an outbound', async () => {
+  // 不应出现在 outbounds 中
+  expect(
+    singbox
+      .getSingboxNodes(tailscaleNodeList)
+      .some((node) => node.type === 'tailscale'),
+  ).toBe(false)
+
+  // 但其 tag 应出现在节点名列表中，方便被 selector/urltest 引用
+  expect(singbox.getSingboxNodeNames(tailscaleNodeList)).toEqual(['ss', 'ts'])
+})

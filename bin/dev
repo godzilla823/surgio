@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+
+const oclif = require('@oclif/core');
+const path = require('path');
+const dotenv = require('dotenv');
+const fs = require('fs-extra');
+
+const envPath = path.resolve(process.cwd(), './.env')
+const project = path.join(__dirname, '..', 'tsconfig.json');
+
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath, quiet: true })
+}
+
+require('ts-node').register({ project });
+
+void oclif.execute({
+  development: true,
+  dir: path.join(__dirname, '..'),
+});

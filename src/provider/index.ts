@@ -1,0 +1,49 @@
+import { PossibleProviderConfigType, SupportProviderEnum } from '../types.js'
+import { getDefaultProviderRuntimeContext } from '../runtime/provider-context.js'
+import { getNetworkClashUA } from '../utils/env-flag.js'
+import './node-runtime.js'
+
+import ClashProvider from './ClashProvider.js'
+import CustomProvider from './CustomProvider.js'
+import ShadowsocksrSubscribeProvider from './ShadowsocksrSubscribeProvider.js'
+import ShadowsocksSubscribeProvider from './ShadowsocksSubscribeProvider.js'
+import TrojanProvider from './TrojanProvider.js'
+import V2rayNSubscribeProvider from './V2rayNSubscribeProvider.js'
+import { createProvider } from './create-provider.js'
+import { PossibleProviderType } from './types.js'
+import Provider from './Provider.js'
+
+import type { ProjectProviderDefinition } from '../project/types.js'
+
+export {
+  ClashProvider,
+  CustomProvider,
+  ShadowsocksrSubscribeProvider,
+  ShadowsocksSubscribeProvider,
+  TrojanProvider,
+  V2rayNSubscribeProvider,
+}
+
+export type { Provider }
+export type * from './types.js'
+export { createProvider }
+
+export async function getProvider(
+  name: string,
+  config: ProjectProviderDefinition | PossibleProviderConfigType,
+): Promise<PossibleProviderType> {
+  const provider = await createProvider(
+    name,
+    config,
+    getDefaultProviderRuntimeContext(),
+  )
+
+  if (
+    provider.type === SupportProviderEnum.Clash &&
+    provider.config.requestUserAgent === 'clash'
+  ) {
+    provider.config.requestUserAgent = getNetworkClashUA()
+  }
+
+  return provider
+}

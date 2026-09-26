@@ -10,41 +10,38 @@ on:
 
 jobs:
   test:
-
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, macOS-latest]
-        node-version: [12, 14]
+        node-version: [22, 26]
 
     steps:
-    - uses: actions/checkout@v1
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
-      with:
-        node-version: ${{ matrix.node-version }}
+      - name: Set up pnpm and Node.js ${{ matrix.node-version }}
+        uses: pnpm/setup@v2
+        with:
+          runtime: node@${{ matrix.node-version }}
+          cache: true
+          install: false
 
-    - name: Cache node modules
-      uses: actions/cache@v1
-      with:
-        path: node_modules
-        key: ${{ runner.OS }}-build-${{ hashFiles('**/yarn.lock') }}
-        restore-keys: |
-          ${{ runner.OS }}-build-${{ env.cache-name }}-
-          ${{ runner.OS }}-build-
-          ${{ runner.OS }}-
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
-    - name: yarn install, build
-      run: |
-        yarn install
+      - name: test, report coverage
+        run: |
+          pnpm build
+          pnpm test:types
+          pnpm test:lint
+          pnpm test:cli
+          pnpm coverage
+          pnpm docs:typecheck
+          pnpm docs:build
 
-    - name: test, report coverage
-      run: |
-        yarn test:lint
-        yarn coverage
-
-    - uses: codecov/codecov-action@v1
-      if: success() && matrix.os == 'ubuntu-latest'
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
+      - uses: codecov/codecov-action@v1
+        if: success() && matrix.os == 'ubuntu-latest'
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
